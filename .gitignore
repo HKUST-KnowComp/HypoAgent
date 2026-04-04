@@ -1,0 +1,40 @@
+# 数据和结果
+sampled_data/
+results/
+data/
+
+# 训练输出
+checkpoints/
+outputs/
+logs/
+runs/
+
+# 模型权重
+*.pt
+*.bin
+*.safetensors
+*.pth
+*.ckpt
+
+# 数据文件
+*.parquet
+*.arrow
+*.jsonl
+*.csv
+*.tsv
+*.npz
+*.npy
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 环境
+.env
+.venv/
+env/
+
+# 其他
+*.log
+.DS_Store

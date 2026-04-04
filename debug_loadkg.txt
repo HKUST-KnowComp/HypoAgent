@@ -1,0 +1,662 @@
+
+
+==================== ENTER_load_kg ====================
+
+===== dataroot =====
+type: <class 'str'>
+value:
+./sampled_data/
+============================================================
+
+===== dataname =====
+type: <class 'str'>
+value:
+PharmKG8k
+============================================================
+
+===== reverse_edges_flag =====
+type: <class 'bool'>
+value:
+True
+============================================================
+
+===== id_map_only =====
+type: <class 'bool'>
+value:
+False
+============================================================
+
+
+==================== ENTER_load_kg_common ====================
+
+===== dataname =====
+type: <class 'str'>
+value:
+PharmKG8k
+============================================================
+
+===== reverse_edges_flag =====
+type: <class 'bool'>
+value:
+True
+============================================================
+
+===== id_map_only =====
+type: <class 'bool'>
+value:
+False
+============================================================
+
+
+==================== DATASET_LOADED ====================
+
+===== ds_type =====
+type: <class 'type'>
+value:
+<class 'pykeen.datasets.pharmkg.PharmKG8k'>
+============================================================
+
+===== ds_str =====
+type: <class 'str'>
+value:
+PharmKG8k(training_path="/home/ycaicr/.data/pykeen/datasets/pharmkg8k/train.tsv", testing_path="/home/ycaicr/.data/pykeen/datasets/pharmkg8k/test.tsv", validation_path="/home/ycaicr/.data/pykeen/datasets/pharmkg8k/valid.tsv")
+============================================================
+
+
+==================== ID_MAPPINGS ====================
+
+===== num_ent =====
+type: <class 'int'>
+value:
+7247
+============================================================
+
+===== num_rel =====
+type: <class 'int'>
+value:
+28
+============================================================
+
+===== ent_id2name_len =====
+type: <class 'int'>
+value:
+7247
+============================================================
+
+===== rel_id2name_len =====
+type: <class 'int'>
+value:
+28
+============================================================
+
+===== ent_id2name_preview =====
+type: <class 'list'>
+value:
+[(0, '22q11 deletion syndrome'), (1, '3 methylglutaconic aciduria'), (2, '46 xx disorders of sex development'), (3, 'a2m'), (4, 'a4galt'), (5, 'aaas'), (6, 'aak1'), (7, 'aanat'), (8, 'aars'), (9, 'aarskog scott syndrome')]
+============================================================
+
+===== rel_id2name_preview =====
+type: <class 'list'>
+value:
+[(0, 'A'), (1, 'An'), (2, 'As'), (3, 'B'), (4, 'C'), (5, 'CC'), (6, 'D'), (7, 'E'), (8, 'GG'), (9, 'I')]
+============================================================
+
+
+==================== RAW_SPLIT_training ====================
+
+===== factory_type =====
+type: <class 'type'>
+value:
+<class 'pykeen.triples.triples_factory.TriplesFactory'>
+============================================================
+
+===== mapped_triples_type =====
+type: <class 'torch._C._TensorMeta'>
+value:
+<class 'torch.Tensor'>
+============================================================
+
+===== mapped_triples_shape =====
+type: <class 'torch.Size'>
+value:
+torch.Size([386768, 3])
+============================================================
+
+===== triples_df_type =====
+type: <class 'type'>
+value:
+<class 'pandas.core.frame.DataFrame'>
+============================================================
+
+===== triples_df_shape =====
+type: <class 'tuple'>
+value:
+(386768, 3)
+============================================================
+
+===== triples_df_head =====
+type: <class 'pandas.core.frame.DataFrame'>
+value:
+   head_id  tail_id  relation_id
+0        0     6562           13
+1        2     4427           13
+2        2     6038           13
+3        2     6986           13
+4        2      330           26
+============================================================
+
+
+==================== RAW_SPLIT_validation ====================
+
+===== factory_type =====
+type: <class 'type'>
+value:
+<class 'pykeen.triples.triples_factory.TriplesFactory'>
+============================================================
+
+===== mapped_triples_type =====
+type: <class 'torch._C._TensorMeta'>
+value:
+<class 'torch.Tensor'>
+============================================================
+
+===== mapped_triples_shape =====
+type: <class 'torch.Size'>
+value:
+torch.Size([49255, 3])
+============================================================
+
+===== triples_df_type =====
+type: <class 'type'>
+value:
+<class 'pandas.core.frame.DataFrame'>
+============================================================
+
+===== triples_df_shape =====
+type: <class 'tuple'>
+value:
+(49255, 3)
+============================================================
+
+===== triples_df_head =====
+type: <class 'pandas.core.frame.DataFrame'>
+value:
+   head_id  tail_id  relation_id
+0        0     1487           13
+1        1     1639           10
+2        3      702            3
+3        3     2083            3
+4        3     3745            3
+============================================================
+
+
+==================== RAW_SPLIT_testing ====================
+
+===== factory_type =====
+type: <class 'type'>
+value:
+<class 'pykeen.triples.triples_factory.TriplesFactory'>
+============================================================
+
+===== mapped_triples_type =====
+type: <class 'torch._C._TensorMeta'>
+value:
+<class 'torch.Tensor'>
+============================================================
+
+===== mapped_triples_shape =====
+type: <class 'torch.Size'>
+value:
+torch.Size([49764, 3])
+============================================================
+
+===== triples_df_type =====
+type: <class 'type'>
+value:
+<class 'pandas.core.frame.DataFrame'>
+============================================================
+
+===== triples_df_shape =====
+type: <class 'tuple'>
+value:
+(49764, 3)
+============================================================
+
+===== triples_df_head =====
+type: <class 'pandas.core.frame.DataFrame'>
+value:
+   head_id  tail_id  relation_id
+0        2     3294           13
+1        3     3864            3
+2        3     1238            7
+3        3     3116            7
+4        3     5313            7
+============================================================
+
+
+==================== SPLITS_REALLOCATED ====================
+
+===== raw_df_all_shape =====
+type: <class 'tuple'>
+value:
+(485787, 3)
+============================================================
+
+===== training_shape =====
+type: <class 'tuple'>
+value:
+(388630, 3)
+============================================================
+
+===== validation_shape =====
+type: <class 'tuple'>
+value:
+(48578, 3)
+============================================================
+
+===== testing_shape =====
+type: <class 'tuple'>
+value:
+(48579, 3)
+============================================================
+
+
+==================== ENTER_update_inverse_edges ====================
+
+===== rel_id2name_type =====
+type: <class 'type'>
+value:
+<class 'dict'>
+============================================================
+
+===== rel_id2name_len =====
+type: <class 'int'>
+value:
+28
+============================================================
+
+===== raw_df_type =====
+type: <class 'type'>
+value:
+<class 'dict'>
+============================================================
+
+===== raw_df_keys =====
+type: <class 'list'>
+value:
+['training', 'validation', 'testing']
+============================================================
+
+
+==================== AFTER_relation_remap ====================
+
+===== new_id2name_len =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== rel_id2inv_len =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== new_id2name_preview =====
+type: <class 'list'>
+value:
+[(0, '+A'), (1, '-A'), (2, '+An'), (3, '-An'), (4, '+As'), (5, '-As'), (6, '+B'), (7, '-B'), (8, '+C'), (9, '-C')]
+============================================================
+
+===== rel_id2inv_preview =====
+type: <class 'list'>
+value:
+[(0, 1), (1, 0), (2, 3), (3, 2), (4, 5), (5, 4), (6, 7), (7, 6), (8, 9), (9, 8)]
+============================================================
+
+
+==================== update_inverse_edges_SPLIT_training ====================
+
+===== df_shape =====
+type: <class 'tuple'>
+value:
+(388630, 3)
+============================================================
+
+===== df_inv_shape =====
+type: <class 'tuple'>
+value:
+(388630, 3)
+============================================================
+
+===== df_all_shape =====
+type: <class 'tuple'>
+value:
+(777260, 3)
+============================================================
+
+===== new_df_split_shape =====
+type: <class 'tuple'>
+value:
+(777260, 3)
+============================================================
+
+===== new_df_split_head =====
+type: <class 'pandas.core.frame.DataFrame'>
+value:
+        head_id  tail_id  relation_id
+371779     6061     3293            0
+2411       1834      618            0
+160597     1331     5308            0
+340284     1376      461            0
+37015      1722     6551            0
+============================================================
+
+
+==================== update_inverse_edges_SPLIT_validation ====================
+
+===== df_shape =====
+type: <class 'tuple'>
+value:
+(48578, 3)
+============================================================
+
+===== df_inv_shape =====
+type: <class 'tuple'>
+value:
+(48578, 3)
+============================================================
+
+===== df_all_shape =====
+type: <class 'tuple'>
+value:
+(97156, 3)
+============================================================
+
+===== new_df_split_shape =====
+type: <class 'tuple'>
+value:
+(97156, 3)
+============================================================
+
+===== new_df_split_head =====
+type: <class 'pandas.core.frame.DataFrame'>
+value:
+       head_id  tail_id  relation_id
+4937      2281     3292            0
+14366      358     2821            0
+8480      1960     4004            0
+25321     4637     5324            0
+13882     1554     6739            0
+============================================================
+
+
+==================== update_inverse_edges_SPLIT_testing ====================
+
+===== df_shape =====
+type: <class 'tuple'>
+value:
+(48579, 3)
+============================================================
+
+===== df_inv_shape =====
+type: <class 'tuple'>
+value:
+(48579, 3)
+============================================================
+
+===== df_all_shape =====
+type: <class 'tuple'>
+value:
+(97158, 3)
+============================================================
+
+===== new_df_split_shape =====
+type: <class 'tuple'>
+value:
+(97158, 3)
+============================================================
+
+===== new_df_split_head =====
+type: <class 'pandas.core.frame.DataFrame'>
+value:
+       head_id  tail_id  relation_id
+31847     5776     5308            0
+16380     2957     4665            0
+4487       922      171            0
+29697     5351      378            0
+17789     3264     5004            0
+============================================================
+
+
+==================== AFTER_reverse_edges ====================
+
+===== num_rel =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== rel_id2name_len =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== rel_id2inv_len =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== rel_id2name_preview =====
+type: <class 'list'>
+value:
+[(0, '+A'), (1, '-A'), (2, '+An'), (3, '-An'), (4, '+As'), (5, '-As'), (6, '+B'), (7, '-B'), (8, '+C'), (9, '-C')]
+============================================================
+
+===== rel_id2inv_preview =====
+type: <class 'list'>
+value:
+[(0, 1), (1, 0), (2, 3), (3, 2), (4, 5), (5, 4), (6, 7), (7, 6), (8, 9), (9, 8)]
+============================================================
+
+
+==================== OUR_DF_BUILT ====================
+
+===== train_shape =====
+type: <class 'tuple'>
+value:
+(777260, 3)
+============================================================
+
+===== valid_shape =====
+type: <class 'tuple'>
+value:
+(874416, 3)
+============================================================
+
+===== test_shape =====
+type: <class 'tuple'>
+value:
+(971574, 3)
+============================================================
+
+===== test_only_shape =====
+type: <class 'tuple'>
+value:
+(97158, 3)
+============================================================
+
+
+==================== GRAPH_BUILT_train ====================
+
+===== graph_type =====
+type: <class 'type'>
+value:
+<class 'networkx.classes.multidigraph.MultiDiGraph'>
+============================================================
+
+===== num_nodes =====
+type: <class 'int'>
+value:
+7230
+============================================================
+
+===== num_edges =====
+type: <class 'int'>
+value:
+769596
+============================================================
+
+
+==================== GRAPH_BUILT_valid ====================
+
+===== graph_type =====
+type: <class 'type'>
+value:
+<class 'networkx.classes.multidigraph.MultiDiGraph'>
+============================================================
+
+===== num_nodes =====
+type: <class 'int'>
+value:
+7241
+============================================================
+
+===== num_edges =====
+type: <class 'int'>
+value:
+864786
+============================================================
+
+
+==================== GRAPH_BUILT_test ====================
+
+===== graph_type =====
+type: <class 'type'>
+value:
+<class 'networkx.classes.multidigraph.MultiDiGraph'>
+============================================================
+
+===== num_nodes =====
+type: <class 'int'>
+value:
+7247
+============================================================
+
+===== num_edges =====
+type: <class 'int'>
+value:
+959766
+============================================================
+
+
+==================== GRAPH_BUILT_test_only ====================
+
+===== graph_type =====
+type: <class 'type'>
+value:
+<class 'networkx.classes.multidigraph.MultiDiGraph'>
+============================================================
+
+===== num_nodes =====
+type: <class 'int'>
+value:
+6597
+============================================================
+
+===== num_edges =====
+type: <class 'int'>
+value:
+97012
+============================================================
+
+
+==================== RETURN_load_kg_common ====================
+
+===== result_keys =====
+type: <class 'list'>
+value:
+['num_ent', 'num_rel', 'ent_id2name', 'rel_id2name', 'rel_id2inv', 'graphs']
+============================================================
+
+===== num_ent =====
+type: <class 'int'>
+value:
+7247
+============================================================
+
+===== num_rel =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== ent_id2name_len =====
+type: <class 'int'>
+value:
+7247
+============================================================
+
+===== rel_id2name_len =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== rel_id2inv_len =====
+type: <class 'int'>
+value:
+56
+============================================================
+
+===== graphs_keys =====
+type: <class 'list'>
+value:
+['train', 'valid', 'test', 'test_only']
+============================================================
+
+########## SECTION: load_kg ##########
+
+===== kg_cache_path =====
+type: <class 'str'>
+value:
+./sampled_data//PharmKG8k/True/PharmKG8k.pkl
+============================================================
+
+
+==================== load_kg_from_disk ====================
+
+===== input_path =====
+type: <class 'str'>
+value:
+./sampled_data//PharmKG8k/True/PharmKG8k.pkl
+============================================================
+
+===== kg_type =====
+type: <class 'type'>
+value:
+<class 'akgr.kgdata.kgclass.KG'>
+============================================================
+
+===== kg_str =====
+type: <class 'str'>
+value:
+<akgr.kgdata.kgclass.KG object at 0x74aada9d59a0>
+============================================================
+
+
+==================== KG_LOADED_FROM_DISK ====================
+
+===== kg_type =====
+type: <class 'type'>
+value:
+<class 'akgr.kgdata.kgclass.KG'>
+============================================================
+
+===== kg_str =====
+type: <class 'str'>
+value:
+<akgr.kgdata.kgclass.KG object at 0x74aada9d59a0>
+============================================================
