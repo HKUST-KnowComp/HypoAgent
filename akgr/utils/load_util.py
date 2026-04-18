@@ -6,12 +6,36 @@ def load_yaml(filename: str):
     return obj
 
 import pandas as pd
+import os
+
 def load_jsonl(data_path):
     """
     return a list of dict
     """
+    print(f"[load_jsonl] Attempting to load: {data_path}")
+    print(f"[load_jsonl] Absolute path: {os.path.abspath(data_path)}")
+    print(f"[load_jsonl] File exists: {os.path.exists(data_path)}")
+
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found: {data_path}")
+
+    file_size = os.path.getsize(data_path)
+    print(f"[load_jsonl] File size: {file_size} bytes")
+
+    if file_size == 0:
+        raise ValueError(f"Data file is empty: {data_path}")
+
+    # 读取前几行查看内容
+    with open(data_path, 'r') as f:
+        first_lines = [f.readline().strip() for _ in range(3)]
+        print(f"[load_jsonl] First 3 lines of file:")
+        for i, line in enumerate(first_lines):
+            if line:
+                print(f"  Line {i+1}: {line[:200]}...")
+
     data_dict = pd.read_json(data_path,
         orient='records', lines=True).to_dict(orient='records')
+    print(f"[load_jsonl] Successfully loaded {len(data_dict)} records")
     return data_dict
 
 def load_csv(data_path, **kwargs):
@@ -85,7 +109,7 @@ def load_sampled_dataset(data_root, dataname, scale, answer_size,
     Output: data_dict ["train"/"valid"/"test"]
     """
     data_dict = {}
-    base_dir = os.path.join(data_root, dataname, str(reverse_edges_flag))
+    base_dir = os.path.join(data_root, dataname)
 
     for split in splits:
         data_path = os.path.join(

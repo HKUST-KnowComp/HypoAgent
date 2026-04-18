@@ -100,3 +100,71 @@ Welcome to cite our work!
   journal={arXiv preprint arXiv:2505.20948},
   year={2025}
 }
+
+
+# Multi-Condition Training Details
+
+Multi-condition training allows the model to learn from multiple types of control signals simultaneously, making it more flexible and controllable during inference.
+
+## How It Works
+
+Multi-condition training uses `main_reverse.py` instead of `main.py` and combines multiple condition types into a single training process:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 accelerate launch \
+    --main_process_port 41013 \
+    --num_processes 1 \
+    -m akgr.abduction_model.main_reverse \
+    --condition='multi' \
+    --multi_conditions='pattern,entity,entitynumber,relation,relationnumber' \
+    --random_multi \
+    --seed 42 \
+    --modelname GPT2_6_act_nt \
+    --accelerate \
+    --data_root ./sampled_data/ \
+    -d PharmKG8k \
+    --scale full \
+    -a 32 \
+    --checkpoint_root ./results/ \
+    --result_root ./results/multi-pharmkg8k/ \
+    --save_frequency 5 \
+    --mode training
+```
+
+## Key Parameters
+
+- `--condition='multi'`: Enables multi-condition mode
+- `--multi_conditions`: Comma-separated list of condition types to use. Available options:
+  - `pattern`: Query pattern structure
+  - `entity`: Specific entity constraints
+  - `entitynumber`: Number of entities in the hypothesis
+  - `relation`: Specific relation constraints
+  - `relationnumber`: Number of relations in the hypothesis
+- `--random_multi`: Randomly select 0-3 conditions during training (improves robustness)
+- `--seed`: Random seed for reproducible condition sampling
+
+## Input Format
+
+During training, conditions are concatenated in a fixed order and separated by `[SEP]`:
+
+```
+<source> [SEP] <relationnumber>  <entitynumber>  <relation>  <entity>  <pattern>
+```
+
+For example:
+```
+(e (123) ) (e (456) ) [SEP] 2  3  -587 -659  269 8271  (p (i (n (p (e)))))
+```
+
+## Training Behavior
+
+- **With `--random_multi`**: During training/optimization, each sample randomly uses 0-3 conditions from the specified list. Unused conditions are set to 'none'. This helps the model learn to work with varying amounts of control information.
+
+- **Without `--random_multi`**: All specified conditions are always used, providing maximum control but potentially less flexibility.
+
+## Benefits
+
+1. **Flexibility**: Single model can handle multiple types of control signals
+2. **Robustness**: Random condition sampling makes the model work well even with partial information
+3. **Efficiency**: Train one model instead of multiple single-condition models
+4. **Composability**: Combine different control signals at inference time for fine-grained control

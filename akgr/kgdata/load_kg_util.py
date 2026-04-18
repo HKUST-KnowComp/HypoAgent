@@ -105,7 +105,7 @@ def load_kg_common(dataname: str, reverse_edges_flag: bool, id_map_only: bool):
     # ds.entity_to_id: dict[str, int]变成 ent_id2name: dict[int, str]
     # ds.relation_to_id: dict[str, int]变成 rel_id2name: dict[int, str]
 
-    print('# During loading raw kg:')
+    # print('# During loading raw kg:')
     raw_df = {}
     # https://pykeen.readthedocs.io/en/latest/reference/triples.html#pykeen.triples.TriplesFactory
     for split in ['training', 'validation', 'testing']:
@@ -162,10 +162,10 @@ def load_kg_common(dataname: str, reverse_edges_flag: bool, id_map_only: bool):
         rel_id2name, rel_id2inv, raw_df = update_inverse_edges(rel_id2name, raw_df)
         num_rel *= 2
 
-    print('# Sizes after adding inverse edges')
-    print(raw_df['training'].shape)
-    print(raw_df['validation'].shape)
-    print(raw_df['testing'].shape)
+    # print('# Sizes after adding inverse edges')
+    # print(raw_df['training'].shape)
+    # print(raw_df['validation'].shape)
+    # print(raw_df['testing'].shape)
 
     if id_map_only == True:
         return {
@@ -184,9 +184,9 @@ def load_kg_common(dataname: str, reverse_edges_flag: bool, id_map_only: bool):
     for split, df in our_df.items():
         graphs[split] = df_to_graph(df)
 
-    print('# Checking id ranges (in graphs)')
-    print(f'ent id: {min(ent_id2name.keys()), max(ent_id2name.keys())}')
-    print(f'rel id: {min(rel_id2name.keys()), max(rel_id2name.keys())}')
+    # print('# Checking id ranges (in graphs)')
+    # print(f'ent id: {min(ent_id2name.keys()), max(ent_id2name.keys())}')
+    # print(f'rel id: {min(rel_id2name.keys()), max(rel_id2name.keys())}')
     return {
         'num_ent': num_ent,
         'num_rel': num_rel,
@@ -223,7 +223,7 @@ def load_wn18rr_ent_id2name(ent_id2name):
 
 from akgr.kgdata.kgclass import GraphSampler, KG
 def load_kg(dataroot,dataname, reverse_edges_flag, id_map_only=False):
-    print(f'# loading {dataname}')
+    # print(f'# loading {dataname}')
     raw_kg_dict = load_kg_common(
         dataname,
         reverse_edges_flag,

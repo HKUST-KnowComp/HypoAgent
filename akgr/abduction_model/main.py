@@ -793,7 +793,7 @@ def load_model_by_mode(args, device, model_name, is_gpt, config_model=None, ntok
         else:
             resume_path = os.path.join(args.checkpoint_root, args.modelname, \
                 '{args.dataname}-{args.scale}-{args.max_answer_size}-{args.resume_epoch}-unconditional.pth')
-
+        resume_path = '/home/gaoyisen/akgr-agent/DBpedia50-full-32-430-multi.pth'
         print(f'Loading model: {resume_path}')
         model, optimizer, scheduler, last_epoch, loss_log = \
             load_model(resume_path, 'model', args.resume_epoch, return_huggingface_model=True)

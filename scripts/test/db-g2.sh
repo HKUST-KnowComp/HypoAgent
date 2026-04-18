@@ -13,12 +13,12 @@
 
 result_root=./results/
 
-CUDA_VISIBLE_DEVICES=0 python -m akgr.abduction_model.main_reverse \
+CUDA_VISIBLE_DEVICES=1 python -m akgr.abduction_model.main_reverse \
     --condition='multi' \
     --multi_conditions='pattern,entity,relationnumber,entitynumber,relation' \
     --random_multi \
     --modelname GPT2_6_act_nt \
-    --data_root ./sampled_data/ \
+    --data_root ./data/ \
     -d DBpedia50 \
     --scale full \
     -a 32 \
@@ -28,7 +28,7 @@ CUDA_VISIBLE_DEVICES=0 python -m akgr.abduction_model.main_reverse \
     --result_root ${result_root} \
     --save_frequency 5 \
     --test_proportion=1\
-    --overwrite_batchsize=256\
+    --overwrite_batchsize=1\
     --mode='testing'\
     --test_top_k=0\
     --test_count0\

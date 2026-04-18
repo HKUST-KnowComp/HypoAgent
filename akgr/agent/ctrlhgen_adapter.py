@@ -87,19 +87,6 @@ class CtrlHGenAdapter:
         print("===========================\n")
 
 
-        print("[CtrlHGenAdapter] Building model...")
-        self.model = create_transformer(
-            ntoken=self.vocab_size,
-            special_tokens=self.special_tokens,
-            model_name=self.model_name,
-            config_model=self.config_model,
-        ).to(self.device)
-
-        print("\n===== MODEL DEBUG =====")
-        print("model.config.vocab_size =", self.model.config.vocab_size)
-        print("embedding.shape =", self.model.get_input_embeddings().weight.shape)
-        print("=======================\n")
-
         print("[CtrlHGenAdapter] Loading checkpoint weights...")
         ckpt = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
         if isinstance(ckpt, dict) and "model" in ckpt and isinstance(ckpt["model"], torch.nn.Module):
@@ -110,6 +97,23 @@ class CtrlHGenAdapter:
             saved_state = ckpt["model"]
         else:
             saved_state = ckpt
+
+        # Infer vocab size from checkpoint embedding to avoid size mismatch
+        embed_key = "transformer.wte.weight" if is_gpt else "shared.weight"
+        if embed_key in saved_state:
+            ckpt_vocab_size = saved_state[embed_key].shape[0]
+            if ckpt_vocab_size != self.vocab_size:
+                print(f"[CtrlHGenAdapter] vocab size mismatch: tokenizer={self.vocab_size}, checkpoint={ckpt_vocab_size}. Using checkpoint size.")
+                self.vocab_size = ckpt_vocab_size - 1  # create_transformer does ntoken+1 internally
+
+        print("[CtrlHGenAdapter] Building model...")
+        self.model = create_transformer(
+            ntoken=self.vocab_size,
+            special_tokens=self.special_tokens,
+            model_name=self.model_name,
+            config_model=self.config_model,
+        ).to(self.device)
+
         self.model.load_state_dict(saved_state, strict=False)
 
         self.model.eval()
