@@ -55,10 +55,12 @@ if __name__ == "__main__":
     data_root = '/home/gaoyisen/akgr-agent/data/'
     dataname = 'DBpedia50'
 
+    from akgr.utils.load_util import load_yaml
+    api_cfg = load_yaml('akgr/configs/api_keys.yml')['deepinfra']
     llm_model = OpenAIServerModel(
-        model_id="Qwen/Qwen3-235B-A22B",
-        api_base="https://api.deepinfra.com/v1/openai",
-        api_key="8b7BpAmXY0fLfQsQyF3lkFCvayTqHjdc",
+        model_id=api_cfg['model_id'],
+        api_base=api_cfg['api_base'],
+        api_key=api_cfg['api_key'],
     )
 
     adapter = build_adapter(hypothesis_model_path, data_root, dataname)
