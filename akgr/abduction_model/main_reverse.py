@@ -776,8 +776,8 @@ def load_model_by_mode(args, device, model_name, is_gpt, config_model=None, ntok
         else:
             resume_path = os.path.join(args.checkpoint_root, args.modelname, \
                 f'{args.dataname}-{args.scale}-{args.max_answer_size}-{args.resume_epoch}-unconditional.pth')
-        # resume_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
-        resume_path = '/home/gaoyisen/akgr-agent/checkpoints/DBpedia50-full-32-430-multi.pth'
+        resume_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
+        # resume_path = '/home/gaoyisen/akgr-agent/checkpoints/DBpedia50-full-32-430-multi.pth'
         print(f'Loading model: {resume_path}')
         model, optimizer, scheduler, last_epoch, loss_log = \
             load_model(resume_path, 'model', args.resume_epoch, return_huggingface_model=True)
@@ -840,6 +840,15 @@ def load_model_by_mode(args, device, model_name, is_gpt, config_model=None, ntok
 
     print('model.config:')
     print(model.config)
+
+    # DEBUG: print actual embedding vocab size vs tokenizer vocab size
+    embed_key = "transformer.wte.weight" if is_gpt else "shared.weight"
+    embed_weight = dict(model.named_parameters()).get(embed_key)
+    if embed_weight is not None:
+        print(f'[DEBUG] model embedding vocab size ({embed_key}): {embed_weight.shape[0]}')
+    print(f'[DEBUG] tokenizer ntoken (vocab_size from create_tokenizer): {ntoken}')
+    print(f'[DEBUG] ntoken+1 passed to create_transformer: {ntoken+1}')
+  
 
     if args.mode == 'training': return model, optimizer, scheduler, last_epoch, loss_log
     else: return model
@@ -1016,6 +1025,7 @@ def main():
     )
     
     print(f'nrelation: {nrelation}\n,nentity: {nentity}\n, ntoken: {ntoken}\n')
+    print(f'[DEBUG] len(tokenizer): {len(tokenizer)}')
     # Model
     config_model = load_yaml(args.config_model)
     config_train = load_yaml(args.config_train)
@@ -1034,44 +1044,43 @@ def main():
         model = load_model_by_mode(
             args=args, device=device, model_name=model_name, is_gpt=is_gpt,
             config_model=config_model, ntoken=ntoken, config_train=config_train)
-    # print('is_encoder_decoder', model.is_encoder_decoder)
 
-    if args.mode == 'training':
-        # https://huggingface.co/docs/transformers/training#train-in-native-pytorch
-        nepoch = config_train['nepoch']
-        fit(args, nepoch, dataloader_dict, model,
-            tokenizer, optimizer, scheduler, graph_samplers,
-            model_name, is_gpt, is_act, src_len, tgt_len,
-            last_epoch, loss_log,
-            args.vs,
-            accelerator=accelerator if args.accelerate else None)
-    elif args.mode == 'testing':
-        # preprocess_allowed_rel_ent_map(graph_samplers)
-        test_loop(
-            args=args,
-            dataloader=dataloader_dict[args.test_split],
-            model=model,
-            tokenizer=tokenizer,
-            graph_samplers=graph_samplers,
-            searching_split=args.test_split,
-            resume_epoch=args.resume_epoch,
-            is_gpt=is_gpt, is_act=is_act,
-            src_len=src_len, tgt_len=tgt_len,
-            accelerator=accelerator if args.accelerate else None)
-    elif args.mode == 'optimizing':
-        if args.rl_type == 'GRPO':
-            model = optimize_gpro(
-                args=args,
-                dataset=dataset_dict['train'],
-                model=model,
-                tokenizer=tokenizer,
-                graph_sampler=graph_samplers,
-                batch_size=batch_size,
-                is_gpt=is_gpt, is_act=is_act,
-                src_len=src_len, tgt_len=tgt_len
-            )
-        else:
-            print('ppo is writing now')
+    # if args.mode == 'training':
+    #     # https://huggingface.co/docs/transformers/training#train-in-native-pytorch
+    #     nepoch = config_train['nepoch']
+    #     fit(args, nepoch, dataloader_dict, model,
+    #         tokenizer, optimizer, scheduler, graph_samplers,
+    #         model_name, is_gpt, is_act, src_len, tgt_len,
+    #         last_epoch, loss_log,
+    #         args.vs,
+    #         accelerator=accelerator if args.accelerate else None)
+    # elif args.mode == 'testing':
+    #     # preprocess_allowed_rel_ent_map(graph_samplers)
+    #     test_loop(
+    #         args=args,
+    #         dataloader=dataloader_dict[args.test_split],
+    #         model=model,
+    #         tokenizer=tokenizer,
+    #         graph_samplers=graph_samplers,
+    #         searching_split=args.test_split,
+    #         resume_epoch=args.resume_epoch,
+    #         is_gpt=is_gpt, is_act=is_act,
+    #         src_len=src_len, tgt_len=tgt_len,
+    #         accelerator=accelerator if args.accelerate else None)
+    # elif args.mode == 'optimizing':
+    #     if args.rl_type == 'GRPO':
+    #         model = optimize_gpro(
+    #             args=args,
+    #             dataset=dataset_dict['train'],
+    #             model=model,
+    #             tokenizer=tokenizer,
+    #             graph_sampler=graph_samplers,
+    #             batch_size=batch_size,
+    #             is_gpt=is_gpt, is_act=is_act,
+    #             src_len=src_len, tgt_len=tgt_len
+    #         )
+    #     else:
+    #         print('ppo is writing now')
 
 if __name__ == '__main__':
     main()

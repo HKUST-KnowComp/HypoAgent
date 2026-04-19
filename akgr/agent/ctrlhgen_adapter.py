@@ -12,7 +12,7 @@ from akgr.kgdata.kgclass import KG
 
 from akgr.utils.parsing_util import ans_shift_indices, list_to_str
 from akgr.agent.getsomesampleFromDB import query_to_natural_language
-from akgr.abduction_model.generation import PrefixAllowedTokensFn, generate_with_constraints
+from akgr.abduction_model.generation import generate_with_constraints
 
 
 class CtrlHGenAdapter:
@@ -79,42 +79,11 @@ class CtrlHGenAdapter:
         print("len(tokenizer) =", len(self.tokenizer))
         print("tokenizer.vocab_size =", self.tokenizer.vocab_size)
 
-        for tok in ["PAD", "END", "START", "SEP", "4", "44", "i", "u", "n"]:
-            try:
-                print(tok, "->", self.tokenizer.convert_tokens_to_ids(tok))
-            except Exception as e:
-                print(tok, "-> ERROR:", e)
-        print("===========================\n")
-
 
         print("[CtrlHGenAdapter] Loading checkpoint weights...")
         ckpt = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
-        if isinstance(ckpt, dict) and "model" in ckpt and isinstance(ckpt["model"], torch.nn.Module):
-            saved_state = ckpt["model"].state_dict()
-        elif isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-            saved_state = ckpt["model_state_dict"]
-        elif isinstance(ckpt, dict) and "model" in ckpt and isinstance(ckpt["model"], dict):
-            saved_state = ckpt["model"]
-        else:
-            saved_state = ckpt
+        self.model = ckpt['model']
 
-        # Infer vocab size from checkpoint embedding to avoid size mismatch
-        embed_key = "transformer.wte.weight" if is_gpt else "shared.weight"
-        if embed_key in saved_state:
-            ckpt_vocab_size = saved_state[embed_key].shape[0]
-            if ckpt_vocab_size != self.vocab_size:
-                print(f"[CtrlHGenAdapter] vocab size mismatch: tokenizer={self.vocab_size}, checkpoint={ckpt_vocab_size}. Using checkpoint size.")
-                self.vocab_size = ckpt_vocab_size - 1  # create_transformer does ntoken+1 internally
-
-        print("[CtrlHGenAdapter] Building model...")
-        self.model = create_transformer(
-            ntoken=self.vocab_size,
-            special_tokens=self.special_tokens,
-            model_name=self.model_name,
-            config_model=self.config_model,
-        ).to(self.device)
-
-        self.model.load_state_dict(saved_state, strict=False)
 
         self.model.eval()
         print("[CtrlHGenAdapter] Model ready.")
@@ -275,7 +244,6 @@ class CtrlHGenAdapter:
         model_input: dict,
         temperature: float = 1.0,
         top_k: int = 0,
-        constrained: bool = True,
     ) -> dict:
         source_text = model_input["source_text"]
 
@@ -285,45 +253,17 @@ class CtrlHGenAdapter:
             [source_text],
             padding="longest",
             max_length=self.src_len,
-            # Match main_reverse/main.py GPT generation behavior:
-            # keep the textual "SEP condition" inside source_text, and still let
-            # the tokenizer append the trailing SEP that marks target generation.
             add_special_tokens=True,
             return_tensors="pt"
         ).to(self.device)
         self.tokenizer.padding_side = original_padding_side
 
-        print("\n===== GENERATION INPUT DEBUG =====")
-        print("source_text =", source_text)
-        print("input_ids =", batch.input_ids[0].tolist())
-        print("attention_mask =", batch.attention_mask[0].tolist())
-        print("decoded_input =", self.tokenizer.decode(batch.input_ids[0], skip_special_tokens=False))
-        print("==================================\n")
-
-        prefix_allowed_tokens_fn = None
-        if self.is_act and constrained:
-            prefix_allowed_tokens_fn = PrefixAllowedTokensFn(
-                offset=self.offset,
-                nentity=self.nentity,
-                nrelation=self.nrelation,
-                tokenizer=self.tokenizer,
-                allow_entity_as_first_token=False,
-            )
-
-        # Keep test-time decoding consistent with main_reverse: always sample.
         generation_temperature = float(temperature) if float(temperature) > 0.0 else 1.0
-
-        # T5 (encoder-decoder): mask out the EOS appended to source by the post-processor,
-        # matching the attention_mask treatment in main_reverse.py test loop.
-        input_attention_mask = batch.attention_mask
-        if not self.is_gpt:
-            input_attention_mask = input_attention_mask.clone()
-            input_attention_mask[batch.input_ids == self.tokenizer.eos_token_id] = 0
 
         outputs = generate_with_constraints(
             model=self.model,
             input_ids=batch.input_ids,
-            attention_mask=input_attention_mask,
+            attention_mask=batch.attention_mask,
             max_length=self._generation_max_length(),
             pad_token_id=self.tokenizer.pad_token_id,
             bos_token_id=self.tokenizer.bos_token_id,
@@ -332,35 +272,11 @@ class CtrlHGenAdapter:
             top_k=int(top_k),
             do_sample=True,
             temperature=generation_temperature,
-            prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
         )
 
-        # GPT outputs source+target in one sequence; slice off the source prefix.
-        # T5 outputs only decoder tokens directly — no slicing needed.
-        if self.is_gpt:
-            new_ids = outputs[0][batch.input_ids.shape[1]:].detach().cpu().tolist()
-        else:
-            new_ids = outputs[0].detach().cpu().tolist()
+        new_ids = outputs[0][batch.input_ids.shape[1]:].detach().cpu().tolist()
         pred_text_shifted = self.decode_action_ids(new_ids)
         pred_text_unshifted = self._unshift_action_text(pred_text_shifted)
-
-        if self.is_gpt:
-            source_attention_mask = batch.attention_mask
-            bsz = outputs.shape[0]
-            diff = outputs.shape[-1] - source_attention_mask.shape[-1]
-            prefix_mask = torch.cat(
-                [
-                    source_attention_mask,
-                    torch.zeros((bsz, diff), dtype=torch.bool, device=self.device),
-                ],
-                dim=1,
-            ).to(self.device)
-            outputs[prefix_mask == 1] = self.tokenizer.pad_token_id
-        pred_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-
-
-        print('pred_de')
-        print(pred_decoded[:5])
 
         # 解析模型输出的 action string -> query/query_nl
         from akgr.agent.action_to_nl import (

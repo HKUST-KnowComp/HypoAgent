@@ -19,7 +19,7 @@ CUDA_VISIBLE_DEVICES=1 python -m akgr.abduction_model.main_reverse \
     --random_multi \
     --modelname GPT2_6_act_nt \
     --data_root ./data/ \
-    -d DBpedia50 \
+    -d PharmKG8k \
     --scale full \
     -a 32 \
     -r 430\
@@ -27,11 +27,11 @@ CUDA_VISIBLE_DEVICES=1 python -m akgr.abduction_model.main_reverse \
     --checkpoint_root  ${result_root} \
     --result_root ${result_root} \
     --save_frequency 5 \
-    --test_proportion=1\
-    --overwrite_batchsize=1\
-    --mode='testing'\
-    --test_top_k=0\
-    --test_count0\
+    --test_proportion=1 \
+    --overwrite_batchsize=1 \
+    --mode='testing' \
+    --test_top_k=0 \
+    --test_count0 \
     --vs
         # --reverse_edges_flag\
     # --tuning\

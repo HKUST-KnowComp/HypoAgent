@@ -59,47 +59,12 @@ def load_kg_tool(data_root: str, dataname: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def generate_hypothesis_tool(
-    adapter,                        # CtrlHGenAdapter (already initialised)
-    observation_entity_names: list[str],
-    condition_type: str = "unconditional",
-    condition_value: Any = None,
+    adapter,
+    source_text: str,
     temperature: float = 1.0,
     top_k: int = 0,
-    constrained: bool = True,
 ) -> dict:
-    """
-    Generate a logical hypothesis from observations + optional condition.
-
-    Args:
-        adapter:                  CtrlHGenAdapter instance
-        observation_entity_names: list of entity name strings (source observations)
-        condition_type:           one of unconditional / pattern / relation /
-                                  entity / relationnumber / entitynumber
-        condition_value:          condition value (name string or count int), or None
-        temperature:              sampling temperature
-        top_k:                    top-k sampling (0 = disabled)
-        constrained:              whether to use constrained decoding
-
-    Returns:
-        {
-          "source_text":    str,   tokenizer input
-          "raw_output":     str,   unshifted action string  (e.g. "i -9 5530 -3 12")
-          "query":          list,  structured query tokens
-          "query_nl":       str,   natural language description
-          "entitynumber":   int | None,
-          "relationnumber": int | None,
-          "conditions":     list[dict],
-        }
-    """
-    parsed = {
-        "observation_entities": observation_entity_names,
-        "conditions": [{"type": condition_type, "value": condition_value}],
-    }
-    model_input = adapter.build_model_input(parsed)
-    result = adapter.generate(model_input, temperature=temperature,
-                              top_k=top_k, constrained=constrained)
-    result["conditions"] = model_input["conditions"]
-    return result
+    return adapter.generate({"source_text": source_text}, temperature=temperature, top_k=top_k)
 
 
 # ---------------------------------------------------------------------------
@@ -201,13 +166,12 @@ class LoadKGTool(Tool):
 class GenerateHypothesisTool(Tool):
     name = "generate_hypothesis"
     description = (
-        "Generate a logical hypothesis from observation entities and an optional condition "
-        "using the trained CtrlHGen model. Returns the action string and natural language description."
+        "Generate a logical hypothesis by running the CtrlHGen model on a pre-built source_text. "
+        "source_text is the tokenized model input returned by format_conversion "
+        "(e.g. '2464 2579 SEP -8 2308'). Returns the action string and natural language description."
     )
     inputs = {
-        "observation_entities": {"type": "string", "description": "Comma-separated entity names (observations)"},
-        "condition_type":       {"type": "string", "description": "unconditional/pattern/relation/entity/relationnumber/entitynumber", "nullable": True},
-        "condition_value":      {"type": "string", "description": "Condition value (name or count)", "nullable": True},
+        "source_text": {"type": "string", "description": "Tokenized model input from format_conversion tool"},
     }
     output_type = "string"
 
@@ -215,9 +179,8 @@ class GenerateHypothesisTool(Tool):
         super().__init__(**kwargs)
         self.adapter = adapter
 
-    def forward(self, observation_entities: str, condition_type: str = "unconditional", condition_value: str = None) -> str:
-        obs = [e.strip() for e in observation_entities.split(",") if e.strip()]
-        result = generate_hypothesis_tool(self.adapter, obs, condition_type, condition_value)
+    def forward(self, source_text: str) -> str:
+        result = generate_hypothesis_tool(self.adapter, source_text)
         return (
             f"raw_output: {result['raw_output']}\n"
             f"query_nl: {result['query_nl']}\n"
@@ -230,41 +193,15 @@ class GenerateHypothesisTool(Tool):
 # ---------------------------------------------------------------------------
 
 def format_conversion_tool(
-    adapter,                        # CtrlHGenAdapter
-    answer_nl: list[str],           # natural-language entity names (observations)
-    followup_questions: str,        # free-text condition request from user
-    session_memory: dict | None = None,
-    llm_parser=None,                # LocalQwenParser or compatible; None -> rule-based fallback
+    adapter,
+    answer_nl: list[str],
+    conditions: list[dict],
 ) -> dict:
-    """
-    Convert answer_nl + followup_questions into a tokenized model input dict
-    ready for adapter.generate().
-
-    Returns:
-        {
-          "parsed":       dict,   output of llm_parser (conditions, observation_entities, ...)
-          "model_input":  dict,   output of adapter.build_model_input (source_text, input_ids, ...)
-        }
-    """
-    # 1. Parse the followup question into structured conditions
-    if llm_parser is not None:
-        parsed_control = llm_parser.parse_condition_text(
-            condition_text=followup_questions,
-            session_memory=session_memory or {},
-        )
-    else:
-        # Rule-based fallback: unconditional
-        parsed_control = {
-            "observation_entities": [],
-            "conditions": [{"type": "unconditional", "value": ""}],
-        }
-
-    # 2. Inject observation entities from answer_nl
-    parsed_control["observation_entities"] = list(answer_nl)
-
-    # 3. Build tokenized model input via adapter
+    parsed_control = {
+        "observation_entities": list(answer_nl),
+        "conditions": conditions,
+    }
     model_input = adapter.build_model_input(parsed_control)
-
     return {
         "parsed": parsed_control,
         "model_input": model_input,
@@ -274,35 +211,44 @@ def format_conversion_tool(
 class FormatConversionTool(Tool):
     name = "format_conversion"
     description = (
-        "Convert natural-language observation entities (answer_nl) and a followup "
-        "condition request into a tokenized model input for the hypothesis model. "
-        "Returns source_text and structured conditions."
+        "Build tokenized model input from observation entities and structured conditions. "
+        "conditions_json must be a JSON string of an array of {type, value} dicts. "
+        "Valid types and value formats:\n"
+        "  relation: specific relation name, e.g. {\"type\":\"relation\",\"value\":\"relation_name\"}\n"
+        "  entity: specific entity name, e.g. {\"type\":\"entity\",\"value\":\"entity_name\"}\n"
+        "  relationnumber: count of relations (integer string), e.g. {\"type\":\"relationnumber\",\"value\":\"3\"}\n"
+        "  entitynumber: count of entities (integer string), e.g. {\"type\":\"entitynumber\",\"value\":\"2\"}\n"
+        "  pattern: pattern string, e.g. {\"type\":\"pattern\",\"value\":\"i p p e p e\"}\n"
+        "  unconditional: no condition, e.g. {\"type\":\"unconditional\",\"value\":\"\"}\n"
+        "For multi-condition pass multiple dicts: "
+        "'[{\"type\":\"relation\",\"value\":\"E\"},{\"type\":\"entitynumber\",\"value\":\"2\"}]'"
     )
     inputs = {
-        "answer_nl":          {"type": "string", "description": "Comma-separated observation entity names"},
-        "followup_questions": {"type": "string", "description": "Free-text condition request, e.g. 'more specific' or 'from spouse perspective'"},
+        "answer_nl":       {"type": "string", "description": "Comma-separated observation entity names"},
+        "conditions_json": {"type": "string", "description": 'JSON array of condition dicts, e.g. [{"type":"relation","value":"E"}]'},
     }
     output_type = "string"
 
-    def __init__(self, adapter, llm_parser=None, **kwargs):
+    def __init__(self, adapter, **kwargs):
         super().__init__(**kwargs)
         self.adapter = adapter
-        self.llm_parser = llm_parser
 
-    def forward(self, answer_nl: str, followup_questions: str) -> str:
+    def forward(self, answer_nl: str, conditions_json: str) -> str:
+        import json
         entities = [e.strip() for e in answer_nl.split(",") if e.strip()]
+        conditions = json.loads(conditions_json)
         result = format_conversion_tool(
             adapter=self.adapter,
             answer_nl=entities,
-            followup_questions=followup_questions,
-            llm_parser=self.llm_parser,
+            conditions=conditions,
         )
         mi = result["model_input"]
-        return (
-            f"source_text: {mi['source_text']}\n"
-            f"conditions: {mi['conditions']}\n"
-            f"observation_entity_ids: {mi['observation_entity_ids']}"
-        )
+        import json
+        return json.dumps({
+            "source_text": mi["source_text"],
+            "observation_entity_ids": mi["observation_entity_ids"],
+            "conditions": mi["conditions"],
+        })
 
 
 class ValidateHypothesisTool(Tool):
@@ -332,3 +278,55 @@ class ValidateHypothesisTool(Tool):
             self.graph_samplers, self.searching_split,
         )
         return f"valid={result['valid']}, scores={result['scores']}"
+
+
+def compute_metrics(
+    raw_output: str,
+    label_answers: list[int],
+    graph_samplers,
+    searching_split: str = "test",
+) -> dict:
+    from akgr.utils.parsing_util import qry_actionstr_2_wordlist, ans_unshift_indices
+    pred_qry = qry_actionstr_2_wordlist(raw_output)
+    pred_ans = graph_samplers[searching_split].search_answers_to_query(pred_qry)
+    label_ans = ans_unshift_indices(label_answers)
+
+    pred_set = set(pred_ans)
+    label_set = set(label_ans)
+    I = len(pred_set & label_set)
+    U = len(pred_set | label_set)
+    A, B = len(label_set), len(pred_set)
+
+    return {
+        "jaccard":  I / U if U > 0 else 0.0,
+        "dice":     2. * I / (A + B) if (A + B) > 0 else 0.0,
+        "overlap":  I / (min(A, B) + 1e-5),
+        "pred_answers": list(pred_set),
+        "label_answers": list(label_set),
+    }
+
+
+class MetricTool(Tool):
+    name = "compute_metrics"
+    description = (
+        "Execute the generated hypothesis on the KG and compute Jaccard, Dice, and Overlap "
+        "against the ground-truth answer entities. "
+        "raw_output is the unshifted action string from generate_hypothesis. "
+        "label_answers is a comma-separated list of raw entity IDs (ground truth)."
+    )
+    inputs = {
+        "raw_output":     {"type": "string", "description": "Unshifted action string, e.g. 'i -8 5530 -3 12'"},
+        "label_answers":  {"type": "string", "description": "Comma-separated ground-truth entity IDs, e.g. '5828,5001,5066'"},
+    }
+    output_type = "string"
+
+    def __init__(self, graph_samplers, searching_split: str = "train", **kwargs):
+        super().__init__(**kwargs)
+        self.graph_samplers = graph_samplers
+        self.searching_split = searching_split
+
+    def forward(self, raw_output: str, label_answers: str) -> str:
+        import json
+        ids = [int(x.strip()) for x in label_answers.split(",") if x.strip()]
+        result = compute_metrics(raw_output, ids, self.graph_samplers, self.searching_split)
+        return json.dumps(result)

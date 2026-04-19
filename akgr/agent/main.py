@@ -1,23 +1,41 @@
 from smolagents import CodeAgent, OpenAIServerModel
-from akgr.agent.tools import LoadKGTool, FormatConversionTool, GenerateHypothesisTool
+from akgr.agent.tools import FormatConversionTool, GenerateHypothesisTool, MetricTool
 
-case = {
-  "answers": [6313,5965],
-  "query": ["(","p","(",-18,")","(","i","(","n","(","p","(",-18,")","(","e","(",1559,")",")",")",")","(","p","(",-19,")","(","e","(",13780,")",")",")",")",")"],
-  "pattern_str": "(p,(i,(n,(p,(e))),(p,(e))))",
-  "query_nl": "Entities that have a 'associatedAct' link to an entity that does not have a 'associatedAct' link to André_Vida, and has a 'associatedBand' link to Mark_Helias",
-  "answers_nl": ["Ed_Blackwell","Don_Cherry_(trumpeter)"],
+case1 ={
+  "answers": [5828,5001,5066,2941,5679,5456,2578,3891,2937,3546,6077,2463],
+  "query": ["(","i","(","n","(","p","(",-8,")","(","p","(",-21,")","(","e","(",1128,")",")",")",")",")","(","p","(",-8,")","(","e","(",4922,")",")",")",")"],
+  "pattern_str": "(i,(n,(p,(p,(e)))),(p,(e)))",
+  "query_nl": "Entities that do not have a 'E' link to an entity that has a 'Ra' link to cdh1, and have a 'E' link to pask",
+  "answers_nl": ["rpgrip1l","pdx1","pfkfb1","gys1","recql4","prpf6","fxn","ltk","gyg1","kcnh2","ski","flt4"],
   "intention_mode": "two-condition",
   "followup_condition_values": {
-    "pattern": "p p e p e",
+    "pattern": "i p p e p e",
     "entitynumber": "2e",
     "relationnumber": "3p",
-    "entity": "André_Vida",
-    "entity_id": "1560",
-    "relation": "associatedAct",
-    "relation_id": "-19"
+    "entity": "cdh1",
+    "entity_id": "1129",
+    "relation": "E",
+    "relation_id": "-9"
   },
-  "followup_question": "I want a hypothesis that follows the pattern \"p p e p e\" and has 3 relations."
+  "followup_question": "I want a hypothesis that includes the relation \"E\" and contains 2 entities."
+}
+case2 ={
+  "answers": [5056,5057,5058,5061,5062,5063,5053,5055],
+  "query": ["(","i","(","i","(","p","(",-8,")","(","e","(",33,")",")",")","(","p","(",-3,")","(","e","(",5059,")",")",")",")","(","p","(",-3,")","(","e","(",5059,")",")",")",")"],
+  "pattern_str": "(i,(i,(p,(e)),(p,(e))),(p,(e)))",
+  "query_nl": "Entities that have a 'E' link to abcd1, and have a 'As' link to pex19, and have a 'As' link to pex19",
+  "answers_nl": ["pex13","pex14","pex16","pex3","pex5","pex6","pex10","pex12"],
+  "intention_mode": "two-condition",
+  "followup_condition_values": {
+    "pattern": "p e p e p e",
+    "entitynumber": "3e",
+    "relationnumber": "3p",
+    "entity": "abcd1",
+    "entity_id": "34",
+    "relation": "E",
+    "relation_id": "-9"
+  },
+  "followup_question": "I want a hypothesis that follows the pattern \"p e p e p e\" and has 3 relations."
 }
 def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
     import yaml
@@ -51,10 +69,10 @@ def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
 
 
 if __name__ == "__main__":
-    hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/DBpedia50-full-32-430-multi.pth'
+    hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
     data_root = '/home/gaoyisen/akgr-agent/data/'
-    dataname = 'DBpedia50'
-
+    dataname = 'PharmKG8k'
+    case = case2
     from akgr.utils.load_util import load_yaml
     api_cfg = load_yaml('akgr/configs/api_keys.yml')['deepinfra']
     llm_model = OpenAIServerModel(
@@ -69,12 +87,21 @@ if __name__ == "__main__":
     format_conversion_agent = CodeAgent(
         tools=[FormatConversionTool(adapter=adapter)],
         model=llm_model,
+        additional_authorized_imports=["json"],
     )
 
     # Agent 2: hypothesis generation — calls the loaded model and returns hypothesis
     hypothesis_generate_agent = CodeAgent(
         tools=[GenerateHypothesisTool(adapter=adapter)],
         model=llm_model,
+        additional_authorized_imports=["json"],
+    )
+
+    # Agent 3: metric computation — jaccard/dice/overlap against ground truth
+    metric_agent = CodeAgent(
+        tools=[MetricTool(graph_samplers=adapter.kg.graph_samplers)],
+        model=llm_model,
+        additional_authorized_imports=["json"],
     )
 
     answer_nl = case["answers_nl"]
@@ -82,21 +109,31 @@ if __name__ == "__main__":
 
     # Step 1: format conversion
     fmt_result = format_conversion_agent.run(
-        f"Convert these observation entities {answer_nl} and followup question "
-        f"'{followup}' into model input using the format_conversion tool. "
-        f"Return the source_text and conditions."
+        f"Parse the followup question '{followup}' into a conditions_json array. "
+        f"Valid condition types: unconditional, pattern, relation, entity, relationnumber, entitynumber. "
+        f"For multi-condition, include multiple dicts, e.g. "
+        f'[{{"type":"relation","value":"relation_name"}},{{"type":"entity","value":"entity_name"}}]. '
+        f"Then call format_conversion with answer_nl='{', '.join(answer_nl)}' "
+        f"and the conditions_json you constructed."
     )
     print("=== Format Conversion Result ===")
     print(fmt_result)
 
-    # Step 2: hypothesis generation
-    obs_str = ", ".join(answer_nl)
-    # Extract condition from case for direct generation
-    conditions = case["followup_condition_values"]
+    import json as _json
+    source_text = _json.loads(fmt_result)["source_text"]
+
+    # Step 2: hypothesis generation using source_text from Step 1
     hyp_result = hypothesis_generate_agent.run(
-        f"Generate a hypothesis using the generate_hypothesis tool. "
-        f"observation_entities='{obs_str}', "
-        f"condition_type='multi', condition_value='{followup}'"
+        f"Call generate_hypothesis with source_text='{source_text}'"
     )
     print("=== Hypothesis Generation Result ===")
     print(hyp_result)
+
+    # Step 3: metric computation
+    label_answers_str = ",".join(str(x) for x in case["answers"])
+    metric_result = metric_agent.run(
+        f"Call compute_metrics with raw_output='{hyp_result.split(chr(10))[0].replace('raw_output: ', '')}' "
+        f"and label_answers='{label_answers_str}'"
+    )
+    print("=== Metric Result ===")
+    print(metric_result)
