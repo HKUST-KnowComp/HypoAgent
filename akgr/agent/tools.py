@@ -286,10 +286,10 @@ def compute_metrics(
     graph_samplers,
     searching_split: str = "test",
 ) -> dict:
-    from akgr.utils.parsing_util import qry_actionstr_2_wordlist, ans_unshift_indices
+    from akgr.utils.parsing_util import qry_actionstr_2_wordlist
     pred_qry = qry_actionstr_2_wordlist(raw_output)
     pred_ans = graph_samplers[searching_split].search_answers_to_query(pred_qry)
-    label_ans = ans_unshift_indices(label_answers)
+    label_ans = label_answers  # already raw 0-indexed
 
     pred_set = set(pred_ans)
     label_set = set(label_ans)
@@ -329,4 +329,302 @@ class MetricTool(Tool):
         import json
         ids = [int(x.strip()) for x in label_answers.split(",") if x.strip()]
         result = compute_metrics(raw_output, ids, self.graph_samplers, self.searching_split)
+        return json.dumps(result)
+
+
+# ---------------------------------------------------------------------------
+# 5. query_translation tool
+# ---------------------------------------------------------------------------
+
+def _split_top_level(tokens: list) -> list[list]:
+    """
+    If the top-level operator is i/u, return the 2 direct children.
+    Otherwise return [] (no split needed for p/n/e).
+    """
+    if not tokens or tokens[0] != '(':
+        return []
+    op = tokens[1]
+    if op not in ('i', 'u'):
+        return []
+    # collect direct children at depth==2
+    depth = 0
+    start = None
+    children = []
+    for idx, t in enumerate(tokens):
+        if t == '(':
+            depth += 1
+            if depth == 2:
+                start = idx
+        elif t == ')':
+            depth -= 1
+            if depth == 1 and start is not None:
+                children.append(tokens[start:idx+1])
+                start = None
+    return children
+
+
+def query_translation_tool(
+    query: list,
+    ent_id2name: dict,
+    rel_id2name: dict,
+) -> dict:
+    """
+    Translate a query token list to natural language.
+    If top-level is i/u, split into 2 sub-query NL descriptions.
+    """
+    from akgr.agent.getsomesampleFromDB import query_to_natural_language
+
+    nl = query_to_natural_language(query, ent_id2name, rel_id2name)
+    sub_nls = []
+    for sq in _split_top_level(query):
+        try:
+            snl = query_to_natural_language(sq, ent_id2name, rel_id2name)
+            if snl:
+                sub_nls.append(snl)
+        except Exception:
+            pass
+    return {"nl": nl, "sub_queries_nl": sub_nls}
+
+
+class QueryTranslationTool(Tool):
+    name = "query_translation"
+    description = (
+        "Translate a query (token list or action string) into natural language "
+        "and decompose it into sub-query NL descriptions."
+    )
+    inputs = {
+        "query_tokens": {
+            "type": "string",
+            "description": (
+                "Space-separated query token list, e.g. '( i ( p ( -8 ) ( e ( 1128 ) ) ) ( p ( -21 ) ( e ( 4922 ) ) ) )'"
+            ),
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, kg, **kwargs):
+        super().__init__(**kwargs)
+        self.kg = kg
+
+    def forward(self, query_tokens: str) -> str:
+        import json
+        # parse space-separated tokens, converting numeric strings to int
+        raw = query_tokens.strip().split()
+        tokens = []
+        for t in raw:
+            try:
+                tokens.append(int(t))
+            except ValueError:
+                tokens.append(t)
+        result = query_translation_tool(tokens, self.kg.ent_id2name, self.kg.rel_id2name)
+        return json.dumps(result)
+
+
+# ---------------------------------------------------------------------------
+# 6. graph_validation tool
+# ---------------------------------------------------------------------------
+
+def _set_relation(result_set: set, label_set: set) -> str:
+    """Describe the set relationship between result and label answers."""
+    if not result_set and not label_set:
+        return "both_empty"
+    if not result_set:
+        return "result_empty"
+    if not label_set:
+        return "label_empty"
+    if result_set == label_set:
+        return "exact_match"
+    if result_set >= label_set:
+        return "result_contains_label"
+    if result_set <= label_set:
+        return "label_contains_result"
+    if result_set & label_set:
+        return "partial_overlap"
+    return "disjoint"
+
+
+def graph_validation_tool(
+    query: list,
+    graph_sampler,
+    label_answers: list[int] | None = None,
+) -> dict:
+    """
+    Execute a query on the KG and return the answer entities.
+    If top-level is i/u, split into 2 sub-queries and validate each.
+    Reports set relationship against label_answers for each.
+    """
+    answers = graph_sampler.search_answers_to_query(query)
+    label_set = set(label_answers) if label_answers else set()
+
+    def _build_result(ans_list, sub_query=None):
+        s = set(ans_list)
+        out = {
+            "answer_count": len(s),
+            "answers": list(s)[:20],
+        }
+        if sub_query is not None:
+            out["sub_query"] = sub_query
+        if label_answers is not None:
+            out["relation_to_label"] = _set_relation(s, label_set)
+            out["overlap_count"] = len(s & label_set)
+        return out
+
+    main_result = _build_result(answers)
+    main_result["valid"] = len(answers) > 0
+
+    sub_results = []
+    for sq in _split_top_level(query):
+        try:
+            sub_ans = graph_sampler.search_answers_to_query(sq)
+            sub_results.append(_build_result(sub_ans, sub_query=sq))
+        except Exception as e:
+            sub_results.append({"sub_query": sq, "error": str(e)})
+
+    main_result["sub_query_results"] = sub_results
+    return main_result
+
+
+class GraphValidationTool(Tool):
+    name = "graph_validation"
+    description = (
+        "Execute a query (token list) on the KG graph and validate it. "
+        "If the top-level operator is i (intersection) or u (union), splits into 2 sub-queries. "
+        "Reports answer count and set relationship against label answers for each."
+    )
+    inputs = {
+        "query_tokens": {
+            "type": "string",
+            "description": "Space-separated query token list (same format as query_translation)",
+        },
+        "label_answers": {
+            "type": "string",
+            "description": "Comma-separated ground-truth entity IDs (raw 0-indexed). Optional.",
+            "nullable": True,
+        },
+        "split": {
+            "type": "string",
+            "description": "Graph split to search on: train, valid, or test (default: train)",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, kg, **kwargs):
+        super().__init__(**kwargs)
+        self.kg = kg
+
+    def forward(self, query_tokens: str, label_answers: str = None, split: str = "train") -> str:
+        import json
+        raw = query_tokens.strip().split()
+        tokens = []
+        for t in raw:
+            try:
+                tokens.append(int(t))
+            except ValueError:
+                tokens.append(t)
+        label_ids = None
+        if label_answers:
+            label_ids = [int(x.strip()) for x in label_answers.split(",") if x.strip()]
+        graph_sampler = self.kg.graph_samplers[split]
+        result = graph_validation_tool(tokens, graph_sampler, label_ids)
+        return json.dumps(result)
+
+
+# ---------------------------------------------------------------------------
+# 7. incoming_edge_intersection tool
+# ---------------------------------------------------------------------------
+
+def incoming_edge_intersection_tool(
+    answer_entity_ids: list[int],
+    graph_sampler,
+    ent_id2name: dict,
+    rel_id2name: dict,
+    top_k: int = 10,
+) -> dict:
+    """
+    For each entity in answer_entity_ids, collect all incoming triples (head, rel, entity).
+    Then intersect the head entities across all answer entities to find common sources.
+    Returns the intersection with relation info as hints.
+    """
+    if not answer_entity_ids:
+        return {"intersection": [], "hints": []}
+
+    # For each answer entity, collect set of (head, rel) pairs
+    per_entity_heads: list[set] = []
+    per_entity_triples: list[list] = []
+
+    for eid in answer_entity_ids:
+        in_edges = list(graph_sampler.in_edges(eid))
+        heads = set()
+        triples = []
+        for (head, _, rel) in in_edges:
+            heads.add(head)
+            triples.append((head, rel, eid))
+        per_entity_heads.append(heads)
+        per_entity_triples.append(triples)
+
+    # Intersect head entity sets
+    if not per_entity_heads:
+        return {"intersection": [], "hints": []}
+
+    common_heads = per_entity_heads[0]
+    for s in per_entity_heads[1:]:
+        common_heads = common_heads & s
+
+    # Build hints: for each common head, collect which relations connect it to answer entities
+    hints = []
+    for head in list(common_heads)[:top_k]:
+        rels = set()
+        for triples in per_entity_triples:
+            for (h, r, _) in triples:
+                if h == head:
+                    rels.add(r)
+        head_name = ent_id2name.get(head, str(head))
+        rel_info = [{"name": rel_id2name.get(r, str(r)), "id": r} for r in rels]
+        hints.append({"head_entity": head_name, "head_id": head, "relations": rel_info})
+
+    return {
+        "intersection_count": len(common_heads),
+        "intersection_ids": list(common_heads)[:top_k],
+        "hints": hints,
+    }
+
+
+class IncomingEdgeIntersectionTool(Tool):
+    name = "incoming_edge_intersection"
+    description = (
+        "For each observation (answer) entity, find all incoming triples in the KG "
+        "(triples where the entity is the tail). Then intersect the head entities across "
+        "all answer entities to find common sources. Returns intersection hints to guide "
+        "hypothesis generation."
+    )
+    inputs = {
+        "answer_entity_ids": {
+            "type": "string",
+            "description": "Comma-separated raw (0-based) entity IDs of the observations",
+        },
+        "split": {
+            "type": "string",
+            "description": "Graph split: train, valid, or test (default: train)",
+            "nullable": True,
+        },
+        "top_k": {
+            "type": "integer",
+            "description": "Max number of intersection results to return (default: 10)",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, kg, **kwargs):
+        super().__init__(**kwargs)
+        self.kg = kg
+
+    def forward(self, answer_entity_ids: str, split: str = "test", top_k: int = 10) -> str:
+        import json
+        ids = [int(x.strip()) for x in answer_entity_ids.split(",") if x.strip()]
+        graph_sampler = self.kg.graph_samplers[split]
+        result = incoming_edge_intersection_tool(
+            ids, graph_sampler, self.kg.ent_id2name, self.kg.rel_id2name, top_k=top_k
+        )
         return json.dumps(result)

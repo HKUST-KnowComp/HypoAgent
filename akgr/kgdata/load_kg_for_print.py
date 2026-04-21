@@ -359,7 +359,7 @@ def load_kg(dataroot, dataname, reverse_edges_flag, id_map_only=False):
     elif dataname == 'WN18RR':
         raw_kg_dict['ent_id2name'] = load_wn18rr_ent_id2name(raw_kg_dict['ent_id2name'])
 
-    path = f'{dataroot}/{dataname}/{str(reverse_edges_flag)}/{dataname}.pkl'
+    path = f'{dataroot}/{dataname}/{dataname}.pkl'
     debug_dump("kg_cache_path", path, section="load_kg")
 
     if os.path.exists(path):

@@ -3,13 +3,14 @@ from akgr.agent.tools import FormatConversionTool, GenerateHypothesisTool, Metri
 
 case1 ={
   "answers": [5828,5001,5066,2941,5679,5456,2578,3891,2937,3546,6077,2463],
-  "query": ["(","i","(","n","(","p","(",-8,")","(","p","(",-21,")","(","e","(",1128,")",")",")",")",")","(","p","(",-8,")","(","e","(",4922,")",")",")",")"],
+  "query": "i n -8 -21 1128 -8 4922",
+#   "query": ["(","i","(","n","(","p","(",-8,")","(","p","(",-21,")","(","e","(",1128,")",")",")",")",")","(","p","(",-8,")","(","e","(",4922,")",")",")",")"],
   "pattern_str": "(i,(n,(p,(p,(e)))),(p,(e)))",
-  "query_nl": "Entities that do not have a 'E' link to an entity that has a 'Ra' link to cdh1, and have a 'E' link to pask",
+  "query_nl": "Entities that do not have a 'GG' link to an entity that has a 'Rg' link to cdh1, and have a 'GG' link to pask",
   "answers_nl": ["rpgrip1l","pdx1","pfkfb1","gys1","recql4","prpf6","fxn","ltk","gyg1","kcnh2","ski","flt4"],
   "intention_mode": "two-condition",
   "followup_condition_values": {
-    "pattern": "i p p e p e",
+    "pattern": "i n p p e p e",
     "entitynumber": "2e",
     "relationnumber": "3p",
     "entity": "cdh1",
@@ -17,17 +18,17 @@ case1 ={
     "relation": "E",
     "relation_id": "-9"
   },
-  "followup_question": "I want a hypothesis that includes the relation \"E\" and contains 2 entities."
+  "followup_question": "I want a hypothesis that includes the relation \"GG\" and contains 2 entities."
 }
 case2 ={
   "answers": [5056,5057,5058,5061,5062,5063,5053,5055],
   "query": ["(","i","(","i","(","p","(",-8,")","(","e","(",33,")",")",")","(","p","(",-3,")","(","e","(",5059,")",")",")",")","(","p","(",-3,")","(","e","(",5059,")",")",")",")"],
   "pattern_str": "(i,(i,(p,(e)),(p,(e))),(p,(e)))",
-  "query_nl": "Entities that have a 'E' link to abcd1, and have a 'As' link to pex19, and have a 'As' link to pex19",
+  "query_nl": "Entities that have a 'GG' link to abcd1, and have a 'B' link to pex19, and have a 'B' link to pex19",
   "answers_nl": ["pex13","pex14","pex16","pex3","pex5","pex6","pex10","pex12"],
   "intention_mode": "two-condition",
   "followup_condition_values": {
-    "pattern": "p e p e p e",
+    "pattern": "i i p e p e p e",
     "entitynumber": "3e",
     "relationnumber": "3p",
     "entity": "abcd1",
@@ -35,7 +36,7 @@ case2 ={
     "relation": "E",
     "relation_id": "-9"
   },
-  "followup_question": "I want a hypothesis that follows the pattern \"p e p e p e\" and has 3 relations."
+  "followup_question": "I want a hypothesis that follows the pattern \"i i p e p e p e\" and has 3 relations."
 }
 def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
     import yaml
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
     data_root = '/home/gaoyisen/akgr-agent/data/'
     dataname = 'PharmKG8k'
-    case = case2
+    case = case1
     from akgr.utils.load_util import load_yaml
     api_cfg = load_yaml('akgr/configs/api_keys.yml')['deepinfra']
     llm_model = OpenAIServerModel(
