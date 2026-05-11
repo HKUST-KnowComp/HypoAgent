@@ -170,6 +170,12 @@ class CtrlHGenAdapter:
                     continue
                 normalized.append({"type": ctype, "value": item.get("value", "")})
 
+        # Filter out relation/entity conditions with empty value
+        normalized = [
+            c for c in normalized
+            if not (c["type"] in ("relation", "entity") and not str(c.get("value", "")).strip())
+        ]
+
         # Backward compatibility: single condition fields.
         if not normalized:
             ctype = alias_map.get(
@@ -221,23 +227,13 @@ class CtrlHGenAdapter:
         raise NotImplementedError(f"Unsupported condition_type: {cond_type}")
 
     def _format_count_condition(self, cond_value, suffix: str) -> str:
-        """
-        Match the condition style used by main_reverse prompt construction.
-        Examples:
-          3 / "3" / "3p" / "3 p" -> "3 p" (suffix='p')
-          2 / "2" / "2e" / "2 e" -> "2 e" (suffix='e')
-        """
         text = str(cond_value).strip().lower()
         if not text:
             raise ValueError("Empty count condition value")
-
-        # Keep digits only for count; tolerate formats like "3p" / "3 p".
         digits = "".join(ch for ch in text if ch.isdigit())
         if not digits:
             raise ValueError(f"Invalid count condition value: {cond_value}")
-        # IMPORTANT: keep count condition tokenizable by the fixed word-level vocab.
-        # "3p"/"4e" become UNK, while "3 p"/"4 e" are recognized tokens.
-        return f"{int(digits)} {suffix}"
+        return f"{int(digits)}{suffix}"
 
     def generate(
         self,
@@ -299,16 +295,15 @@ class CtrlHGenAdapter:
             )
             if trailing:
                 print("[POSTPROCESS WARNING] Trailing tokens ignored:", trailing[:50], "..." if len(trailing) > 50 else "")
-        except Exception as e:
+        except Exception:
             query = None
             query_nl = None
-            print("[POSTPROCESS ERROR]", e)
 
-        # 输出原始文本、结构化查询和自然语言解释
-        print("[DEBUG] Predicted text (action string, shifted):", pred_text_shifted)
-        print("[DEBUG] Predicted text (action string, unshifted):", pred_text_unshifted)
-        print("[DEBUG] Query:", query)
-        print("[DEBUG] Query NL:", query_nl)
+        # # 输出原始文本、结构化查询和自然语言解释
+        # print("[DEBUG] Predicted text (action string, shifted):", pred_text_shifted)
+        # print("[DEBUG] Predicted text (action string, unshifted):", pred_text_unshifted)
+        # print("[DEBUG] Query:", query)
+        # print("[DEBUG] Query NL:", query_nl)
 
         entity_number = None
         relation_number = None
@@ -326,6 +321,22 @@ class CtrlHGenAdapter:
             "entitynumber": entity_number,
             "relationnumber": relation_number,
         }
+    def raw_to_nl(self, raw: str) -> str | None:
+        from akgr.agent.action_to_nl import action_string_to_tree, action_string_to_tree_prefix
+        from akgr.agent.getsomesampleFromDB import query_to_natural_language
+        try:
+            try:
+                tree = action_string_to_tree(raw)
+            except Exception:
+                tree, _ = action_string_to_tree_prefix(raw)
+            query = self._tree_to_query_tokens(tree)
+            return query_to_natural_language(query, getattr(self, "id2ent", None), getattr(self, "id2rel", None))
+        except Exception:
+            return None
+
+    # Fixed order matching new_extract_sample_to_device_multi in tokenizer.py
+    _MULTI_COND_ORDER = ["relation_number", "entity_number", "relation", "entity", "pattern"]
+
     def build_model_input(self, parsed: dict) -> dict:
         obs_names = parsed.get("observation_entities", [])
         conditions = self._normalize_conditions(parsed)
@@ -336,21 +347,23 @@ class CtrlHGenAdapter:
         obs_ids = [self.mapper.get_entity_id(name) for name in obs_names]
         shifted_obs_ids = ans_shift_indices(obs_ids)
         mapped_cond_values = []
-        cond_tokens = []
-        for cond in conditions:
-            token = self._condition_to_source_token(
-                cond_type=cond["type"],
-                cond_value=cond.get("value", ""),
-                mapped_values=mapped_cond_values,
-            )
-            if token:
-                cond_tokens.append(token)
 
-        if cond_tokens:
-            # Use "SEP" token directly (not "[SEP]"), consistent with fixed vocab.
-            source_text = f"{list_to_str(shifted_obs_ids)} SEP {' '.join(cond_tokens)}"
-        else:
+        # Build a lookup of provided conditions
+        cond_lookup = {c["type"]: c.get("value", "") for c in conditions}
+        is_unconditional = all(c["type"] == "unconditional" for c in conditions)
+
+        if is_unconditional:
             source_text = list_to_str(shifted_obs_ids)
+        else:
+            # Emit all 5 slots in fixed order; absent ones become "none"
+            slots = []
+            for ctype in self._MULTI_COND_ORDER:
+                if ctype in cond_lookup:
+                    token = self._condition_to_source_token(ctype, cond_lookup[ctype], mapped_cond_values)
+                    slots.append(token if token is not None else "none")
+                else:
+                    slots.append("none")
+            source_text = f"{list_to_str(shifted_obs_ids)} [SEP] {'  '.join(slots)}"
 
         return {
             "observation_entities": obs_names,

@@ -386,9 +386,27 @@ def new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt: bool
             input_ids = source_tokenized.input_ids
             attention_mask = source_tokenized.attention_mask
 
-    # 统一处理 labels 的 padding
+    # DEBUG: print aligned text and tokenized outputs
+    print("\n===== DEBUG text + tokenized source =====")
+    debug_n = min(5, len(merged_source), source_tokenized.input_ids.size(0))
+    for i in range(debug_n):
+        text = merged_source[i]
+        ids = source_tokenized.input_ids[i].tolist()
+        mask = source_tokenized.attention_mask[i].tolist()
+        valid_ids = source_tokenized.input_ids[i][source_tokenized.attention_mask[i] == 1].tolist()
+        print(f"sample {i} text: {text}")
+        print(f"sample {i} input_ids: {ids}")
+        print(f"sample {i} attention_mask: {mask}")
+        print(f"sample {i} valid_input_ids: {valid_ids}")
+        print(f"sample {i} decoded_all: {tokenizer.decode(ids, skip_special_tokens=False)}")
+        print(f"sample {i} decoded_valid: {tokenizer.decode(valid_ids, skip_special_tokens=False)}")
+        print("-" * 80)
+
     labels[labels == tokenizer.pad_token_id] = -100
     source_attention_mask = source_tokenized.attention_mask
+
+
+    breakpoint()
 
     if stage == 'agent':
         target_pattern = [
@@ -466,9 +484,27 @@ def new_extract_sample_to_device_number_entity(device, sample, tokenizer, is_gpt
             input_ids = source_tokenized.input_ids
             attention_mask = source_tokenized.attention_mask
 
-    # 统一处理 labels 的 padding
+    # DEBUG: print aligned text and tokenized outputs
+    print("\n===== DEBUG text + tokenized source =====")
+    debug_n = min(5, len(merged_source), source_tokenized.input_ids.size(0))
+    for i in range(debug_n):
+        text = merged_source[i]
+        ids = source_tokenized.input_ids[i].tolist()
+        mask = source_tokenized.attention_mask[i].tolist()
+        valid_ids = source_tokenized.input_ids[i][source_tokenized.attention_mask[i] == 1].tolist()
+        print(f"sample {i} text: {text}")
+        print(f"sample {i} input_ids: {ids}")
+        print(f"sample {i} attention_mask: {mask}")
+        print(f"sample {i} valid_input_ids: {valid_ids}")
+        print(f"sample {i} decoded_all: {tokenizer.decode(ids, skip_special_tokens=False)}")
+        print(f"sample {i} decoded_valid: {tokenizer.decode(valid_ids, skip_special_tokens=False)}")
+        print("-" * 80)
+
     labels[labels == tokenizer.pad_token_id] = -100
     source_attention_mask = source_tokenized.attention_mask
+
+
+    breakpoint()
 
     if stage == 'agent':
         target_pattern = [
@@ -548,6 +584,22 @@ def new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_g
     # 统一处理 labels 的 padding
     labels[labels == tokenizer.pad_token_id] = -100
     source_attention_mask = source_tokenized.attention_mask
+        # DEBUG: print aligned text and tokenized outputs
+    print("\n===== DEBUG text + tokenized source =====")
+    debug_n = min(5, len(merged_source), source_tokenized.input_ids.size(0))
+    for i in range(debug_n):
+        text = merged_source[i]
+        ids = source_tokenized.input_ids[i].tolist()
+        mask = source_tokenized.attention_mask[i].tolist()
+        valid_ids = source_tokenized.input_ids[i][source_tokenized.attention_mask[i] == 1].tolist()
+        print(f"sample {i} text: {text}")
+        print(f"sample {i} input_ids: {ids}")
+        print(f"sample {i} attention_mask: {mask}")
+        print(f"sample {i} valid_input_ids: {valid_ids}")
+        print(f"sample {i} decoded_all: {tokenizer.decode(ids, skip_special_tokens=False)}")
+        print(f"sample {i} decoded_valid: {tokenizer.decode(valid_ids, skip_special_tokens=False)}")
+        print("-" * 80)
+    breakpoint()
 
     if stage == 'agent':
         target_pattern = [
@@ -627,6 +679,22 @@ def new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is
     # 统一处理 labels 的 padding
     labels[labels == tokenizer.pad_token_id] = -100
     source_attention_mask = source_tokenized.attention_mask
+        # DEBUG: print aligned text and tokenized outputs
+    print("\n===== DEBUG text + tokenized source =====")
+    debug_n = min(5, len(merged_source), source_tokenized.input_ids.size(0))
+    for i in range(debug_n):
+        text = merged_source[i]
+        ids = source_tokenized.input_ids[i].tolist()
+        mask = source_tokenized.attention_mask[i].tolist()
+        valid_ids = source_tokenized.input_ids[i][source_tokenized.attention_mask[i] == 1].tolist()
+        print(f"sample {i} text: {text}")
+        print(f"sample {i} input_ids: {ids}")
+        print(f"sample {i} attention_mask: {mask}")
+        print(f"sample {i} valid_input_ids: {valid_ids}")
+        print(f"sample {i} decoded_all: {tokenizer.decode(ids, skip_special_tokens=False)}")
+        print(f"sample {i} decoded_valid: {tokenizer.decode(valid_ids, skip_special_tokens=False)}")
+        print("-" * 80)
+    breakpoint()
 
     if stage == 'agent':
         target_pattern = [
@@ -697,9 +765,28 @@ def new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_g
             input_ids = source_tokenized.input_ids
             attention_mask = source_tokenized.attention_mask
 
-    # 统一处理 labels 的 padding
+    # # DEBUG: print aligned text and tokenized outputs
+    # print("\n===== DEBUG text + tokenized source =====")
+    # debug_n = min(5, len(merged_source), source_tokenized.input_ids.size(0))
+    # for i in range(debug_n):
+    #     text = merged_source[i]
+    #     ids = source_tokenized.input_ids[i].tolist()
+    #     mask = source_tokenized.attention_mask[i].tolist()
+    #     valid_ids = source_tokenized.input_ids[i][source_tokenized.attention_mask[i] == 1].tolist()
+    #     print(f"sample {i} text: {text}")
+    #     print(f"sample {i} input_ids: {ids}")
+    #     print(f"sample {i} attention_mask: {mask}")
+    #     print(f"sample {i} valid_input_ids: {valid_ids}")
+    #     print(f"sample {i} decoded_all: {tokenizer.decode(ids, skip_special_tokens=False)}")
+    #     print(f"sample {i} decoded_valid: {tokenizer.decode(valid_ids, skip_special_tokens=False)}")
+    #     print("-" * 80)
+    # breakpoint()
+
     labels[labels == tokenizer.pad_token_id] = -100
     source_attention_mask = source_tokenized.attention_mask
+
+
+
 
     if stage == 'agent':
         target_pattern = [
@@ -861,7 +948,9 @@ if __name__ == '__main__':
 
 
 def new_extract_sample_to_device_multi(
-    device, sample, tokenizer, is_gpt: bool, src_len, tgt_len, is_gen: bool, multi_condition_list,random_multi: bool,seed: int, stage: str = None
+    device, sample, tokenizer, is_gpt: bool, src_len, tgt_len, is_gen: bool,
+    multi_condition_list, random_multi: bool, seed: int,
+    random_multi_keep_range=(0, 3), stage: str = None
 ):
     stage = _normalize_stage(stage, is_gen)
     source = sample['source']
@@ -888,10 +977,18 @@ def new_extract_sample_to_device_multi(
 
 
 
-        if random_multi and stage in {'train', 'optimize'}:
-            # Randomly keep 0~n conditions from the provided set.
-            keep_n = rng.randint(0, 3)
-            # print(f"keep_n: {keep_n}")
+        if random_multi and stage in {'train', 'optimize', 'test'}:
+            # Randomly keep conditions from the configured range [min_keep, max_keep].
+            min_keep, max_keep = random_multi_keep_range
+            if min_keep == max_keep:
+                keep_n = min_keep
+            else:
+                max_available = len(cond_name_set)
+                min_keep = max(0, min(min_keep, max_available))
+                max_keep = max(min_keep, min(max_keep, max_available))
+                keep_n = rng.randint(min_keep, max_keep+1)
+
+
             # print(f"length of cond_name_set: {len(cond_name_set)}")
             active_cond_name_set = (rng.sample((cond_name_set), keep_n))
         else:
@@ -923,11 +1020,7 @@ def new_extract_sample_to_device_multi(
             cond_dict['relationnumber'] = number_to_epnumber(tgt)[1]
         condition.append(cond_dict)
         
-        # print("\n===== DEBUG merged_source =====")
-        # for i, text in enumerate(merged_source[:5]):
-        #     print(f"sample {i}:")
-        #     print(text)
-        #     print("-"*80)
+        # Keep per-sample loop output quiet; use aligned batch debug below.
 
     if not is_gpt:
         source_tokenized = tokenizer(
@@ -983,7 +1076,26 @@ def new_extract_sample_to_device_multi(
             input_ids = source_tokenized.input_ids
             attention_mask = source_tokenized.attention_mask
 
+    # DEBUG: print aligned text and tokenized outputs
+    print("\n===== DEBUG text + tokenized source =====")
+    debug_n = min(5, len(merged_source), source_tokenized.input_ids.size(0))
+    for i in range(debug_n):
+        text = merged_source[i]
+        ids = source_tokenized.input_ids[i].tolist()
+        mask = source_tokenized.attention_mask[i].tolist()
+        valid_ids = source_tokenized.input_ids[i][source_tokenized.attention_mask[i] == 1].tolist()
+        print(f"sample {i} text: {text}")
+        print(f"sample {i} input_ids: {ids}")
+        print(f"sample {i} attention_mask: {mask}")
+        print(f"sample {i} valid_input_ids: {valid_ids}")
+        print(f"sample {i} decoded_all: {tokenizer.decode(ids, skip_special_tokens=False)}")
+        print(f"sample {i} decoded_valid: {tokenizer.decode(valid_ids, skip_special_tokens=False)}")
+        print("-" * 80)
+
     labels[labels == tokenizer.pad_token_id] = -100
     source_attention_mask = source_tokenized.attention_mask
+
+
+    # breakpoint()
 
     return source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition

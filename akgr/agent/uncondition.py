@@ -1,212 +1,358 @@
 """
-Unconditional hypothesis generation + analysis.
+Unconditional hypothesis generation + 4 candidate strategies.
 
-Flow:
-  1. Generate hypothesis with NO conditions (unconditional), only observation entities.
-  2. Execute on KG, compute metrics against label answers.
-  3. Split hypothesis at top-level i/u, validate each sub-query.
-  4. Incoming edge intersection on observations -> structural hints.
-  5. LLM synthesizes all results and proposes `num_suggestions` different condition sets.
+Workflow:
+  1. Generate unconditional hypothesis
+  2. Call graph_validation + incoming_edge_intersection once
+  3. Generate 4 candidates:
+     - unconditional (keep original)
+     - structural (entitynumber + relationnumber + pattern)
+     - semantic (one relation + one entity)
+     - hybrid (structural + semantic)
+  4. Evaluate all 4, save candidates + best
 """
 import json
-from smolagents import OpenAIServerModel
+from smolagents import CodeAgent, OpenAIServerModel
 from akgr.agent.tools import (
     format_conversion_tool,
     generate_hypothesis_tool,
     compute_metrics,
-    graph_validation_tool,
-    incoming_edge_intersection_tool,
-    _split_top_level,
+    GraphValidationTool,
+    IncomingEdgeIntersectionTool,
+    IntersectionCandidatesTool,
 )
-from akgr.agent.getsomesampleFromDB import query_to_natural_language
-from akgr.utils.parsing_util import qry_actionstr_2_wordlist
-
-case1 = {
-    "answers": [5828, 5001, 5066, 2941, 5679, 5456, 2578, 3891, 2937, 3546, 6077, 2463],
-    "answers_nl": ["rpgrip1l", "pdx1", "pfkfb1", "gys1", "recql4", "prpf6", "fxn", "ltk", "gyg1", "kcnh2", "ski", "flt4"],
-}
-case2 = {
-    "answers": [5056, 5057, 5058, 5061, 5062, 5063, 5053, 5055],
-    "answers_nl": ["pex13", "pex14", "pex16", "pex3", "pex5", "pex6", "pex10", "pex12"],
-}
+from akgr.agent.loop import parse_conditions_from_question, sub_query_prompt
+from akgr.agent.single import build_adapter
 
 
-def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
-    from akgr.utils.load_util import load_yaml
-    from akgr.kgdata import load_kg
-    from akgr.agent.ctrlhgen_adapter import CtrlHGenAdapter
-
-    config_dataloader = load_yaml('akgr/configs/config-dataloader.yml')
-    config_model = load_yaml('akgr/configs/config-model.yml')
-    modelname = 'GPT2_6_act_nt'
-    is_gpt = 'GPT2' in modelname
-    is_act = 'act' in modelname
-    tgt_len = config_dataloader['act_len'] + 1 if is_act else config_dataloader['qry_len'] + 1
-    src_len = config_dataloader['ans_len'] + 1
-    kg = load_kg(data_root, dataname, reverse_edges_flag=False)
-    return CtrlHGenAdapter(
-        checkpoint_path=hypothesis_model_path,
-        special_tokens=config_dataloader['special_tokens'],
-        offset=config_dataloader['offset'],
-        nentity=len(kg.ent_id2name),
-        nrelation=len(kg.rel_id2name),
-        is_gpt=is_gpt,
-        model_name=modelname,
-        config_model=config_model,
-        kg=kg,
-        src_len=src_len,
-        tgt_len=tgt_len,
-    )
-
-
-def _set_relation_str(pred_set: set, label_set: set) -> str:
-    if not pred_set and not label_set:
-        return "both_empty"
-    if not pred_set:
-        return "result_empty"
-    if not label_set:
-        return "label_empty"
-    if pred_set == label_set:
-        return "exact_match"
-    if pred_set >= label_set:
-        return "result_contains_label"
-    if pred_set <= label_set:
-        return "label_contains_result"
-    if pred_set & label_set:
-        return "partial_overlap"
-    return "disjoint"
-
-
-def run_uncondition(adapter, llm_model, case: dict, num_suggestions: int = 3) -> dict:
+def run_uncondition(
+    adapter,
+    llm_model,
+    case: dict,
+    jaccard_threshold: float = 0.95,
+    verbose: bool = True,
+):
     kg = adapter.kg
     answer_nl = case["answers_nl"]
     label_answers = case["answers"]
-    rel_names = list(adapter.mapper.rel_name2id.keys())
-    ent_sample = list(adapter.mapper.ent_name2id.keys())[:50]
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"  UNCONDITIONAL GENERATION")
+        print(f"{'='*60}\n")
 
     # Step 1: Unconditional generation
-    print("=" * 60)
-    print("  UNCONDITIONAL GENERATION")
-    print("=" * 60)
     fmt_result = format_conversion_tool(
         adapter=adapter,
         answer_nl=answer_nl,
-        conditions=[{"type": "unconditional", "value": ""}],
+        conditions=[],
     )
     source_text = fmt_result["model_input"]["source_text"]
     gen_result = generate_hypothesis_tool(adapter, source_text)
     raw_output = gen_result["raw_output"]
     hypothesis_nl = gen_result.get("query_nl", "N/A")
-    print(f"Hypothesis (raw): {raw_output}")
-    print(f"Hypothesis (NL):  {hypothesis_nl}")
-
-    # Step 2: Metrics
     metrics = compute_metrics(
         raw_output=raw_output,
         label_answers=label_answers,
         graph_samplers=kg.graph_samplers,
-        searching_split="train",
     )
     jaccard = metrics["jaccard"]
-    print(f"Jaccard: {jaccard:.4f}, Pred: {len(metrics['pred_answers'])}, Label: {len(metrics['label_answers'])}")
 
-    # Step 3: Sub-query analysis
-    pred_qry = qry_actionstr_2_wordlist(raw_output)
-    sub_query_info = []
-    if pred_qry:
-        graph_validation_tool(pred_qry, kg.graph_samplers["train"], label_answers)
-        for sq in _split_top_level(pred_qry):
-            try:
-                sq_ans = kg.graph_samplers["train"].search_answers_to_query(sq)
-                sq_set = set(sq_ans)
-                label_set = set(label_answers)
-                sq_nl = query_to_natural_language(sq, kg.ent_id2name, kg.rel_id2name)
-                sub_query_info.append({
-                    "sub_query_nl": sq_nl,
-                    "answer_count": len(sq_set),
-                    "relation_to_label": _set_relation_str(sq_set, label_set),
-                    "overlap_count": len(sq_set & label_set),
-                })
-            except Exception as e:
-                sub_query_info.append({"error": str(e)})
+    if verbose:
+        print(f"[Unconditional] {raw_output}")
+        print(f"  NL: {hypothesis_nl}")
+        print(f"  Jaccard: {jaccard:.4f}\n")
 
-    # Step 4: Incoming edge intersection
-    incoming_hints = incoming_edge_intersection_tool(
-        answer_entity_ids=label_answers,
-        graph_sampler=kg.graph_samplers["train"],
-        ent_id2name=kg.ent_id2name,
-        rel_id2name=kg.rel_id2name,
-        top_k=10,
+    # Step 2: Analysis (call tools once)
+    from akgr.utils.parsing_util import qry_actionstr_2_wordlist
+    tokens_str = " ".join(str(t) for t in qry_actionstr_2_wordlist(raw_output)) if raw_output else ""
+    label_str = ",".join(str(a) for a in label_answers)
+
+    analysis_agent = CodeAgent(
+        tools=[
+            GraphValidationTool(kg=kg),
+            IncomingEdgeIntersectionTool(kg=kg),
+            IntersectionCandidatesTool(kg=kg),
+        ],
+        model=llm_model,
+        additional_authorized_imports=["json"],
+        max_steps=3,
+        verbosity_level=1 if verbose else 0,
     )
-    print(f"Incoming intersection: {incoming_hints['intersection_count']} common heads")
 
-    # Step 5: LLM proposes conditions
-    sub_query_text = json.dumps(sub_query_info, indent=2) if sub_query_info else "No sub-queries."
-    hints_text = json.dumps(incoming_hints["hints"][:5], indent=2) if incoming_hints.get("hints") else "No hints."
+    _is_gpt = "gpt" in getattr(llm_model, "model_id", "").lower()
+    _gpt_prefix = (
+        f"You are a CodeAgent. You must always respond in the following exact format:\n\n"
+        f"Thoughts: Briefly explain your plan.\n\n"
+        f"<code>\n# valid Python code only\n# call final_answer(...) when done\n</code>\n\n"
+        f"Do not use Markdown code fences.\n"
+        f"Do not omit the opening <code> tag.\n"
+        f"Do not output text after </code>.\n\n"
+        f"Example of a valid response:\n"
+        f"Thoughts: I'll call graph_validation, then incoming_edge_intersection, then return the analysis.\n\n"
+        f"<code>\n"
+        f"import json\n"
+        f"result = graph_validation(...)\n"
+        f'final_answer({{"structural": {{"entitynumber": 2}}, "semantic": {{"relation": "GG"}}, "hybrid": {{"entitynumber": 2, "relation": "GG"}}}})\n'
+        f"</code>\n\n"
+    ) if _is_gpt else ""
 
-    prompt = (
-        f"You are an expert in knowledge graph abductive reasoning.\n"
-        f"An unconditional hypothesis was generated. Based on the analysis, "
-        f"propose {num_suggestions} DIFFERENT condition sets to guide better hypothesis generation.\n\n"
-        f"## Observations\n{', '.join(answer_nl)}\n\n"
+    analysis_prompt = (
+        f"{_gpt_prefix}"
+        f"## Task\n"
+        f"You are an analysis agent for knowledge graph (KG) abductive reasoning.\n"
+        f"Given a set of observed entities $O$, the goal is to find a logical hypothesis $H$ (a KG query) "
+        f"such that executing $H$ on the KG returns exactly $O$.\n"
+        f"A hypothesis $H$ is a logical query in one of 13 patterns (1p/2p/2i/3i/ip/pi/2u/up/2in/3in/inp/pni/pin). "
+        f"Conditions control what kind of hypothesis the generative model produces "
+        f"(e.g. which relation/entity to include, the pattern shape, or counts).\n"
+        f"An unconditional hypothesis was generated. Your job: generate the structural and semantic hints as the conditions to improve the hypothesis quality.\n"
+        f"## Observations (entity names)\n{', '.join(answer_nl)}\n\n"
+        f"## Observation IDs (raw 0-based)\n{label_str}\n\n"
         f"## Unconditional hypothesis\n"
-        f"- NL: {hypothesis_nl}\n- Raw: {raw_output}\n"
-        f"- Jaccard: {jaccard:.4f}, Pred: {len(metrics['pred_answers'])}, Label: {len(metrics['label_answers'])}\n\n"
-        f"## Sub-query analysis\n{sub_query_text}\n\n"
-        f"## Incoming edge hints\n{hints_text}\n\n"
-        f"## Available relations\n{', '.join(rel_names)}\n\n"
-        f"## Sample entities\n{', '.join(ent_sample)}\n\n"
-        f"## Condition types\n"
-        f"- pattern: e.g. 'i p e p e', 'i n p p e p e'\n"
-        f"- relation: specific relation name\n"
-        f"- entity: specific entity name\n"
-        f"- relationnumber: e.g. '2', '3'\n"
-        f"- entitynumber: e.g. '2', '3'\n\n"
-        f"Propose {num_suggestions} strategies with different focuses "
-        f"(e.g. pattern-focused, relation+entity, relation+count).\n\n"
-        f"Return ONLY a JSON array of {num_suggestions} objects:\n"
-        f'  [{{"analysis": "...", "condition": "I want a hypothesis that..."}}]\n'
-        f"Return nothing else."
+        f"- Natural language: {hypothesis_nl}\n"
+        f"- Raw action string: {raw_output}\n"
+        f"- Jaccard vs observations: {jaccard:.4f}\n\n"
+        f"## ID to Name Lookup\n"
+        f"When you extract a relation_id R from a sub_query token (negative integer -R), look up its name: rel_id2name[R] (use positive R).\n"
+        f"{sub_query_prompt()}\n\n"
+        f"**Note on KG incompleteness**: The training graph may be incomplete. "
+        f"If tool results seem sparse, use semantic understanding of entity/relation names to reason about plausible alternatives.\n\n"
+        f"## Step 1 — Sub-logic decomposition (graph_validation)\n"
+        f"IMPORTANT: Always start your code with `import json`.\n"
+        f"ALL tools return JSON strings — always parse with `json.loads()` before indexing.\n"
+        f"TOOL BUDGET: Call graph_validation at most 1 time. Then call incoming_edge_intersection once. Then output final_answer.\n"
+        f"Call graph_validation(query_tokens='{tokens_str}', label_answers='{label_str}', split='train').\n"
+        f"It returns sub_query_results: each entry has 'sub_query', 'answer_count', 'overlap_count', 'relation_to_label'.\n"
+        f"- Find the sub-query with HIGHEST overlap_count — best building block for the semantic condition.\n"
+        f"- Find the sub-query with LOWEST overlap_count — weakest branch, informs structural redesign.\n"
+        f"- Count the number of sub-queries to infer entitynumber and relationnumber.\n\n"
+        f"## Step 2 — Neighborhood search (incoming_edge_intersection)\n"
+        f"Call incoming_edge_intersection(answer_entity_ids='{label_str}', split='train', top_k=10).\n"
+        f"The result contains:\n"
+        f"- flat_candidates: 1-hop (entity, relation) pairs with jaccard vs O. Pick the top-1 as the best semantic (relation, entity) pair.\n"
+        f"- two_hop_candidates: 2-hop paths with jaccard. Use to infer a good pattern (e.g. 2p if top two_hop has high jaccard).\n\n"
+        f"## Step 3 — Return analysis result\n"
+        f"Based on Steps 1–2, return a JSON object via final_answer() with three top-level keys (always include all three):\n"
+        f"- 'structural': optional keys among 'entitynumber' (int 1-3), 'relationnumber' (int 1-3), 'pattern' (string using i/u/n/p/e tokens). "
+        f"You do **not** need to fill every key—include **at least one** structural hint you want to condition on.\n"
+        f"- 'semantic': optional keys among 'relation' (ONE relation NAME from flat_candidates), 'entity' (ONE entity NAME from flat_candidates). "
+        f"Include **at least one** of relation or entity.\n"
+        f"- 'hybrid': optional keys among ones in structural and semantic. "
+        f"You do **not** need every eligible key—include **at least one** from structural (entitynumber/relationnumber/pattern) **and** **at least one** from semantic (relation/entity) so hybrid always mixes both.\n"
+        f"Constraints:\n"
+        f"- structural must be a dict with **at least one** of: entitynumber, relationnumber, pattern.\n"
+        f"- semantic must be a dict with **at least one** of: relation, entity.\n"
+        f"- When present, entitynumber and relationnumber must be integers between 1 and 3.\n"
+        f"- When present, pattern must use only i/u/n/p/e tokens (e.g. 'i p e p e', 'p p e').\n"
+        f"- When present, relation and entity must be NAME strings (not IDs).\n\n"
+        f"Example:\n"
+        f"```python\n"
+        f"final_answer({{\n"
+        f'  "structural": {{"entitynumber": 2}},\n'
+        f'  "semantic": {{"relation": "GG", "entity": "pask"}},\n'
+        f'  "hybrid": {{"entitynumber": 2, "relation": "GG"}},\n'
+        f"}})\n"
+        f"```\n\n"
+        f"Suggestion:\n"
+        f"- Anchor conditions to the **unconditional hypothesis** already shown (natural language + raw action string): treat it as the primary reference—reuse relations, entities, and compositional structure that are already present rather than proposing unrelated constraints.\n"
+        f"- **graph_validation** sub-logic (per-branch overlap vs observations) helps judge which parts of that hypothesis are well supported vs weak; favor conditioning on the stronger fragments and use the weakest branch to justify structural or semantic fixes.\n"
+        f"- **incoming_edge_intersection** neighborhood search (1-hop / 2-hop candidates vs observations) further validates which hooks are plausible; use those signals to turn the most defensible pieces of the unconditional output into explicit structural or semantic conditions.\n"
+        + (
+            f"REMINDER: wrap ALL code in <code>...</code> tags. Never use ```python```. Never write 'Thought:' — use 'Thoughts:'.\n"
+            if _is_gpt else ""
+        )
     )
-
-    response = llm_model([{"role": "user", "content": prompt}], stop_sequences=None)
-    result_text = response.content.strip()
-    if result_text.startswith("```"):
-        result_text = result_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 
     try:
-        suggestions = json.loads(result_text)
-    except json.JSONDecodeError:
-        import re
-        match = re.search(r'\[.*\]', result_text, re.DOTALL)
-        suggestions = json.loads(match.group()) if match else [{"analysis": "Parse failed", "condition": "unconditional"}]
+        analysis_result = analysis_agent.run(analysis_prompt)
+        if isinstance(analysis_result, str):
+            text = analysis_result.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            analysis_data = json.loads(text)
+        else:
+            analysis_data = analysis_result
+    except Exception as e:
+        if verbose:
+            print(f"  [Analysis error] {e}")
+        analysis_data = {
+            "structural": {"entitynumber": 2, "relationnumber": 2, "pattern": "i p e p e"},
+            "semantic": {"relation": "", "entity": ""},
+            "analysis": "Analysis failed, using defaults",
+        }
 
-    print(f"\n{'='*60}\n  SUGGESTED CONDITIONS ({len(suggestions)})\n{'='*60}")
-    for i, s in enumerate(suggestions):
-        print(f"\n  [{i+1}] {s.get('condition', 'N/A')}")
-        print(f"      {s.get('analysis', 'N/A')}")
+    structural = analysis_data.get("structural", {})
+    semantic = analysis_data.get("semantic", {})
+    hybrid = analysis_data.get("hybrid", {})
 
-    return {
+    def _dict_to_conditions(d):
+        """Convert a condition dict to a list of {type, value} entries, filtering empty values."""
+        return [{"type": k, "value": str(v)} for k, v in d.items() if v not in (None, "")]
+
+    # Step 3: Generate 4 candidates
+    candidate_conditions = [
+        # 1. unconditional
+        [],
+        # 2. structural
+        _dict_to_conditions(structural),
+        # 3. semantic
+        _dict_to_conditions(semantic),
+        # 4. hybrid
+        _dict_to_conditions(hybrid),
+    ]
+
+    candidate_names = ["unconditional", "structural", "semantic", "hybrid"]
+    candidates = []
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"  EVALUATING 4 CANDIDATES")
+        print(f"{'='*60}\n")
+
+    for name, cond_list in zip(candidate_names, candidate_conditions):
+        try:
+            fmt = format_conversion_tool(adapter=adapter, answer_nl=answer_nl, conditions=cond_list)
+            gen = generate_hypothesis_tool(adapter, fmt["model_input"]["source_text"])
+            m = compute_metrics(raw_output=gen["raw_output"], label_answers=label_answers, graph_samplers=kg.graph_samplers)
+            candidates.append({
+                "name": name,
+                "conditions": cond_list,
+                "hypothesis_raw": gen["raw_output"],
+                "hypothesis_nl": gen.get("query_nl"),
+                "jaccard": m["jaccard"],
+                "dice": m["dice"],
+                "overlap": m["overlap"],
+            })
+            if verbose:
+                print(f"  [{name}] J={m['jaccard']:.4f} | {gen['raw_output']}")
+        except Exception as e:
+            if verbose:
+                print(f"  [{name}] Error: {e}")
+            candidates.append({
+                "name": name,
+                "conditions": cond_list,
+                "hypothesis_raw": None,
+                "hypothesis_nl": None,
+                "jaccard": 0.0,
+                "dice": 0.0,
+                "overlap": 0.0,
+            })
+
+    # Pick best — include the initial unconditional generation
+    all_results = [{
+        "name": "unconditional_initial",
+        "conditions": [],
         "hypothesis_raw": raw_output,
         "hypothesis_nl": hypothesis_nl,
-        "metrics": metrics,
-        "sub_query_analysis": sub_query_info,
-        "incoming_hints": incoming_hints,
-        "suggested_conditions": suggestions,
+        "jaccard": jaccard,
+        "dice": metrics["dice"],
+        "overlap": metrics["overlap"],
+    }] + candidates
+    best = max(all_results, key=lambda c: (c["jaccard"], c.get("dice") or 0))
+
+    if verbose:
+        print(f"\n[Best] {best['name']} | Jaccard={best['jaccard']:.4f}")
+
+    return {
+        "answers": label_answers,
+        "answers_nl": answer_nl,
+        "unconditional": {
+            "hypothesis_raw": raw_output,
+            "hypothesis_nl": hypothesis_nl,
+            "jaccard": jaccard,
+            "dice": metrics["dice"],
+            "overlap": metrics["overlap"],
+        },
+        "analysis": analysis_data.get("analysis", ""),
+        "generated_conditions": {
+            "structural": structural,
+            "semantic": semantic,
+            "hybrid": hybrid,
+        },
+        "candidates": candidates,
+        "best": best,
     }
 
 
+def _save_result(log_path, result):
+    compact_keys = ("answers", "answers_nl")
+    placeholders = {}
+    for k in compact_keys:
+        if result.get(k) is not None:
+            ph = f'"__PH_{k}__"'
+            placeholders[ph] = json.dumps(result[k], ensure_ascii=False)
+            result[k] = f"__PH_{k}__"
+    text = json.dumps(result, ensure_ascii=False, indent=2)
+    for ph, val in placeholders.items():
+        text = text.replace(ph, val)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(text + "\n")
+
+
 if __name__ == "__main__":
-    hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
-    data_root = '/home/gaoyisen/akgr-agent/data/'
-    dataname = 'PharmKG8k'
+    import argparse, os
+    from akgr.agent.case import case_1p,case_2in
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["case", "run"], default="case")
+    parser.add_argument("--dataname", default="DBpedia50")
+    parser.add_argument("--checkpoint", default="/home/gaoyisen/akgr-agent/checkpoints/DBpedia50-full-32-300-multi.pth")
+    parser.add_argument("--data_root", default="/home/gaoyisen/akgr-agent/data/")
+    parser.add_argument("--jaccard_threshold", type=float, default=0.95)
+    parser.add_argument("--limit", type=int, default=500)
+    args = parser.parse_args()
 
     from akgr.utils.load_util import load_yaml
-    api_cfg = load_yaml('akgr/configs/api_keys.yml')['deepinfra']
+    # api_cfg = load_yaml("akgr/configs/api_keys.yml")["deepinfra"]
+    api_cfg = load_yaml("akgr/configs/api_keys.yml")["xlabapi"]
+    _is_gpt_model = "gpt" in api_cfg["model_id"].lower()
     llm_model = OpenAIServerModel(
-        model_id=api_cfg['model_id'],
-        api_base=api_cfg['api_base'],
-        api_key=api_cfg['api_key'],
+        model_id=api_cfg["model_id"],
+        api_base=api_cfg["api_base"],
+        api_key=api_cfg["api_key"],
+        timeout=60,
+        **({"extra_headers": {"User-Agent": "claude-cli/2.0.76 (external, cli)"}} if _is_gpt_model else {}),
     )
-    adapter = build_adapter(hypothesis_model_path, data_root, dataname)
-    run_uncondition(adapter=adapter, llm_model=llm_model, case=case1, num_suggestions=3)
+    adapter = build_adapter(args.checkpoint, args.data_root, args.dataname)
+    case2 =case_2in
+    if args.mode == "case":
+        log_dir = os.path.join("log", args.dataname)
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "uncondition.jsonl")
+        result = run_uncondition(
+            adapter=adapter, llm_model=llm_model, case=case2,
+            jaccard_threshold=args.jaccard_threshold,
+        )
+        _save_result(log_path, result)
+
+    else:
+        from tqdm import tqdm
+        data_file = os.path.join(args.data_root, args.dataname, "singleturn.jsonl")
+        log_dir = os.path.join("log", args.dataname)
+        os.makedirs(log_dir, exist_ok=True)
+        model_tag = api_cfg["model_id"].split("/")[-1]
+        log_path = os.path.join(log_dir, f"uncondition_{model_tag}.jsonl")
+
+        with open(data_file, encoding="utf-8") as f:
+            content = f.read()
+        decoder = json.JSONDecoder()
+        cases, pos = [], 0
+        while pos < len(content):
+            while pos < len(content) and content[pos].isspace():
+                pos += 1
+            if pos >= len(content):
+                break
+            obj, pos = decoder.raw_decode(content, pos)
+            cases.append(obj)
+
+        for case in tqdm(cases[:args.limit], desc=args.dataname):
+            try:
+                result = run_uncondition(
+                    adapter=adapter, llm_model=llm_model, case=case,
+                    jaccard_threshold=args.jaccard_threshold, verbose=False,
+                )
+                _save_result(log_path, result)
+            except Exception as e:
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"error": str(e), "answers": case.get("answers")}, ensure_ascii=False) + "\n")

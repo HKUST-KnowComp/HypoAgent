@@ -1,8 +1,11 @@
+# 配置/密钥
 akgr/configs/api_keys.yml
 
+# 数据与结果
 sampled_data/
 results/
 data/
+log/
 
 # 训练输出
 checkpoints/
@@ -36,7 +39,17 @@ __pycache__/
 .venv/
 env/
 
+# 论文 / 写作
+_EMNLP_2026__Abductive_Agent/
+*.pdf
+*.tex
+*.bib
+
+# Claude / IDE
+CLAUDE.md
+.claude/
+# agentreadme.md
+
 # 其他
 *.log
 .DS_Store
-CLAUDE.md

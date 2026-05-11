@@ -1,10 +1,11 @@
 from smolagents import CodeAgent, OpenAIServerModel
-from akgr.agent.tools import FormatConversionTool, GenerateHypothesisTool, MetricTool
+from akgr.agent.tools import FormatConversionTool
+from akgr.agent.case import case_2i,case_2p,case_1p,case_2u,case_up,case_ip
 
-case1 ={
+
+case1 = {
   "answers": [5828,5001,5066,2941,5679,5456,2578,3891,2937,3546,6077,2463],
-  "query": "i n -8 -21 1128 -8 4922",
-#   "query": ["(","i","(","n","(","p","(",-8,")","(","p","(",-21,")","(","e","(",1128,")",")",")",")",")","(","p","(",-8,")","(","e","(",4922,")",")",")",")"],
+  "query": ["(","i","(","n","(","p","(",-8,")","(","p","(",-21,")","(","e","(",1128,")",")",")",")",")","(","p","(",-8,")","(","e","(",4922,")",")",")",")"],
   "pattern_str": "(i,(n,(p,(p,(e)))),(p,(e)))",
   "query_nl": "Entities that do not have a 'GG' link to an entity that has a 'Rg' link to cdh1, and have a 'GG' link to pask",
   "answers_nl": ["rpgrip1l","pdx1","pfkfb1","gys1","recql4","prpf6","fxn","ltk","gyg1","kcnh2","ski","flt4"],
@@ -14,9 +15,9 @@ case1 ={
     "entitynumber": "2e",
     "relationnumber": "3p",
     "entity": "cdh1",
-    "entity_id": "1129",
-    "relation": "E",
-    "relation_id": "-9"
+    "entity_id": "1128",
+    "relation": "GG",
+    "relation_id": "-8"
   },
   "followup_question": "I want a hypothesis that includes the relation \"GG\" and contains 2 entities."
 }
@@ -32,9 +33,9 @@ case2 ={
     "entitynumber": "3e",
     "relationnumber": "3p",
     "entity": "abcd1",
-    "entity_id": "34",
-    "relation": "E",
-    "relation_id": "-9"
+    "entity_id": "33",
+    "relation": "GG",
+    "relation_id": "-8"
   },
   "followup_question": "I want a hypothesis that follows the pattern \"i i p e p e p e\" and has 3 relations."
 }
@@ -70,16 +71,17 @@ def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
 
 
 if __name__ == "__main__":
-    hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
+    hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-160-multi.pth'
     data_root = '/home/gaoyisen/akgr-agent/data/'
     dataname = 'PharmKG8k'
-    case = case1
+    case = case_ip
     from akgr.utils.load_util import load_yaml
     api_cfg = load_yaml('akgr/configs/api_keys.yml')['deepinfra']
     llm_model = OpenAIServerModel(
         model_id=api_cfg['model_id'],
         api_base=api_cfg['api_base'],
         api_key=api_cfg['api_key'],
+        timeout=60,
     )
 
     adapter = build_adapter(hypothesis_model_path, data_root, dataname)
@@ -87,20 +89,6 @@ if __name__ == "__main__":
     # Agent 1: format conversion — parses answer_nl + followup into model input
     format_conversion_agent = CodeAgent(
         tools=[FormatConversionTool(adapter=adapter)],
-        model=llm_model,
-        additional_authorized_imports=["json"],
-    )
-
-    # Agent 2: hypothesis generation — calls the loaded model and returns hypothesis
-    hypothesis_generate_agent = CodeAgent(
-        tools=[GenerateHypothesisTool(adapter=adapter)],
-        model=llm_model,
-        additional_authorized_imports=["json"],
-    )
-
-    # Agent 3: metric computation — jaccard/dice/overlap against ground truth
-    metric_agent = CodeAgent(
-        tools=[MetricTool(graph_samplers=adapter.kg.graph_samplers)],
         model=llm_model,
         additional_authorized_imports=["json"],
     )
@@ -124,17 +112,22 @@ if __name__ == "__main__":
     source_text = _json.loads(fmt_result)["source_text"]
 
     # Step 2: hypothesis generation using source_text from Step 1
-    hyp_result = hypothesis_generate_agent.run(
-        f"Call generate_hypothesis with source_text='{source_text}'"
-    )
+    from akgr.agent.tools import generate_hypothesis_tool, compute_metrics
+    gen_result = generate_hypothesis_tool(adapter, source_text)
+    raw_output = gen_result["raw_output"]
     print("=== Hypothesis Generation Result ===")
-    print(hyp_result)
+    print(gen_result.get("query_nl", raw_output))
 
     # Step 3: metric computation
     label_answers_str = ",".join(str(x) for x in case["answers"])
-    metric_result = metric_agent.run(
-        f"Call compute_metrics with raw_output='{hyp_result.split(chr(10))[0].replace('raw_output: ', '')}' "
-        f"and label_answers='{label_answers_str}'"
-    )
+    metrics = compute_metrics(raw_output, case["answers"], adapter.kg.graph_samplers)
     print("=== Metric Result ===")
-    print(metric_result)
+    print(f"Jaccard={metrics['jaccard']:.4f}  Dice={metrics['dice']:.4f}  Overlap={metrics['overlap']:.4f}")  
+
+    # Step 4: TP/FP/FN diagnosis
+    from akgr.agent.tools import execute_and_diagnose_tool
+    diag = execute_and_diagnose_tool(raw_output, case["answers"], adapter.kg.graph_samplers["train"])
+    print("=== Diagnosis ===")
+    print(f"TP={diag['tp_count']}  FP={diag['fp_count']}  FN={diag['fn_count']}")
+    print(f"Precision={diag['precision']:.4f}  Recall={diag['recall']:.4f}  F1={diag['f1']:.4f}")
+    print(f"Diagnosis: {diag['diagnosis']}")

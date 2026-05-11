@@ -1,0 +1,158 @@
+Design an agentic KG-guided hypothesis repair module for abductive reasoning over a knowledge graph.
+
+Task:
+Given:
+- a knowledge graph KG,
+- a set of observed entities O,
+- an initial generated hypothesis H,
+produce a repaired hypothesis H' that better explains O.
+
+Overall loop:
+1. Execute H on KG:
+   A = Execute(H, KG)
+
+2. Compare A with O:
+   TP = A ∩ O
+   FP = A - O
+   FN = O - A
+
+3. Diagnose coverage errors:
+   - Many FP: H is under-constrained / too broad.
+   - Many FN: H is over-constrained / too narrow.
+   - Both FP and FN: H may contain wrong predicates, wrong entities, or wrong structure.
+
+4. Repair H using KG-guided candidate operations.
+
+Coverage-based repair:
+If FP is high, make H more specific by increasing structural complexity:
+- add an intersection constraint,
+- add a new relation,
+- add a new anchor entity,
+- extend a path,
+- specify a vague relation/entity.
+
+If FN is high, make H less restrictive or more flexible:
+- remove a constraint,
+- remove an anchor entity,
+- shorten a path,
+- generalize a relation/entity,
+- add a union branch if O appears multi-modal.
+
+Predicate/entity diagnosis from KG neighborhoods:
+For each predicate or path component in H, evaluate whether its relation and anchor entity are reliable using local KG evidence.
+
+Given a predicate:
+    p(x) = r(x, e)
+
+Check its correctness by comparing neighborhood statistics over TP, FP, FN, and O.
+
+Relation correctness:
+A relation r is likely correct if:
+- r frequently appears in the local neighborhoods of observed entities O or TP;
+- r covers many observed entities but few FP entities;
+- r is shared consistently across O rather than appearing only for one instance;
+- replacing r with nearby candidate relations decreases the score.
+
+A relation r is suspicious if:
+- r appears often in FP but rarely in O;
+- r is too generic and has high global frequency in KG;
+- r covers only a small part of O while introducing many FP;
+- alternative relations from the neighborhoods of O or FN produce better execution results.
+
+Entity correctness:
+An anchor entity e is likely correct if:
+- many observed entities connect to e through relation r or compatible relations;
+- e is common among O/TP but uncommon among FP;
+- e is semantically or structurally central in the neighborhoods of O;
+- replacing e with nearby candidate entities decreases the score.
+
+An anchor entity e is suspicious if:
+- it is connected mainly to FP rather than O;
+- it is too generic or high-degree;
+- only one observed entity supports it;
+- nearby alternative entities explain more FN or reduce FP.
+
+Neighborhood-based candidate search:
+For observed entities O, false positives FP, and false negatives FN:
+- collect one-hop and two-hop neighborhoods;
+- extract candidate relations, entities, and relation-entity pairs;
+- compute their coverage over O, TP, FP, and FN;
+- penalize overly frequent or high-degree candidates;
+- propose replacements or additional constraints based on these scores.
+
+Useful scoring signals:
+For a candidate predicate q:
+    q is good for refinement if it covers O/TP but not FP.
+
+For reducing FP:
+    score_refine(q) = cov(q, O) - cov(q, FP) - λ * global_freq(q)
+
+For covering FN:
+    score_expand(q) = cov(q, FN) - λ * global_freq(q)
+
+For replacing a relation r with r':
+    score_replace_relation = Score(Execute(H[r -> r'], KG), O)
+
+For replacing an entity e with e':
+    score_replace_entity = Score(Execute(H[e -> e'], KG), O)
+
+For replacing a full predicate r(x,e) with r'(x,e'):
+    score_replace_predicate = Score(Execute(H[p -> p'], KG), O)
+
+Important:
+Always evaluate candidate replacements by executing the whole repaired hypothesis on KG.
+Do not judge relation/entity correctness only locally.
+
+Path-level repair:
+For multi-hop hypotheses such as:
+    x --r1--> y --r2--> e
+relations are coupled through the intermediate variable y.
+Therefore, do not repair r1 and r2 independently only.
+
+Consider:
+- edge-level replacement:
+    r1 -> r1' or r2 -> r2'
+- anchor-level replacement:
+    e -> e'
+- segment-level replacement:
+    (r1, r2, e) -> (r1', r2', e')
+- path-length repair:
+    shorten the path if it is too restrictive;
+    extend the path if it is too broad.
+
+All path repairs must be evaluated by executing the entire path query.
+
+Orthogonal repair dimensions:
+Coverage repair and predicate/entity repair are orthogonal:
+- A hypothesis may be too broad but use the correct relation.
+- A hypothesis may be too broad because the relation is too generic or wrong.
+- A hypothesis may be too narrow because it has too many constraints.
+- A hypothesis may be too narrow because one relation/entity is wrong.
+Therefore, generate both structural repair candidates and predicate/entity replacement candidates.
+
+Candidate repair actions:
+- ADD_CONSTRAINT
+- REMOVE_CONSTRAINT
+- ADD_UNION_BRANCH
+- EXTEND_PATH
+- SHORTEN_PATH
+- ADD_ENTITY
+- REMOVE_ENTITY
+- GENERALIZE_RELATION
+- SPECIFY_RELATION
+- REPLACE_RELATION
+- REPLACE_ENTITY
+- REPLACE_PREDICATE
+- REPLACE_PATH_SEGMENT
+
+Ranking:
+For each candidate H_i:
+1. Execute H_i on KG.
+2. Compute TP_i, FP_i, FN_i.
+3. Score H_i using a metric such as:
+       score(H_i) = F1(A_i, O) - α * complexity(H_i)
+   or another task-specific objective.
+4. Keep the top-k repaired hypotheses.
+
+Final goal:
+The agent should use KG execution feedback and local neighborhood evidence to decide whether the hypothesis is too broad, too narrow, structurally inadequate, or contains wrong relations/entities. It should then propose and rank repairs that improve the ability of the hypothesis to explain the observed entities.
