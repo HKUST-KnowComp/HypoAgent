@@ -8,7 +8,7 @@ dataset_dict, nentity, nrelation = new_create_dataset(
     scale="my_sample_Pharm",   # 你实际用的 scale 按你的来
     answer_size=32,
     pattern_filtered=pattern_filtered,
-    data_root="/home/ycaicr/CtrlHGen/sampled_data",
+    data_root="./sampled_data",
     splits=["train"],
     is_act=True,
 )

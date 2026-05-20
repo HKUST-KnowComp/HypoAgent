@@ -1,10 +1,10 @@
 import json
 from akgr.kgdata import load_kg
 
-data_path = "/home/ycaicr/CtrlHGen/sampled_data/DBpedia50/False/DBpedia50-full-32-test-a2q.jsonl"
+data_path = "./sampled_data/DBpedia50/False/DBpedia50-full-32-test-a2q.jsonl"
 
 kg = load_kg(
-    dataroot="/home/ycaicr/CtrlHGen/sampled_data",
+    dataroot="./sampled_data",
     dataname="DBpedia50",
     reverse_edges_flag=False,
 )

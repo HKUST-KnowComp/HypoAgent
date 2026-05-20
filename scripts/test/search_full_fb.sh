@@ -1,1 +1,0 @@
-CUDA_VISIBLE_DEVICE=1 python -m akgr.rule_based_model.search -d='FB15k-237' --scale='full' --heuristics='brute_force_1p'

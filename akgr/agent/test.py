@@ -4,8 +4,8 @@ from akgr.agent.case import case_pni, case_3i, case_2p, case_1p, case_2i, case_p
 from akgr.agent.tools import _enumerate_subquery_combinations, graph_validation_tool
 import json
 
-hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-160-multi.pth'
-data_root = '/home/gaoyisen/akgr-agent/data/'
+hypothesis_model_path = 'checkpoints/PharmKG8k-full-32-160-multi.pth'
+data_root = './data/'
 dataname = 'PharmKG8k'
 
 adapter = build_adapter(hypothesis_model_path, data_root, dataname)

@@ -297,22 +297,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["case", "run"], default="case")
     parser.add_argument("--dataname", default="DBpedia50")
-    parser.add_argument("--checkpoint", default="/home/gaoyisen/akgr-agent/checkpoints/DBpedia50-full-32-300-multi.pth")
-    parser.add_argument("--data_root", default="/home/gaoyisen/akgr-agent/data/")
+    parser.add_argument("--checkpoint", default="checkpoints/DBpedia50-full-32-300-multi.pth")
+    parser.add_argument("--data_root", default="./data/")
     parser.add_argument("--jaccard_threshold", type=float, default=0.95)
     parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
 
     from akgr.utils.load_util import load_yaml
-    # api_cfg = load_yaml("akgr/configs/api_keys.yml")["deepinfra"]
-    api_cfg = load_yaml("akgr/configs/api_keys.yml")["xlabapi"]
-    _is_gpt_model = "gpt" in api_cfg["model_id"].lower()
+    api_cfg = load_yaml("akgr/configs/api_keys.yml")["deepinfra"]
     llm_model = OpenAIServerModel(
         model_id=api_cfg["model_id"],
         api_base=api_cfg["api_base"],
         api_key=api_cfg["api_key"],
         timeout=60,
-        **({"extra_headers": {"User-Agent": "claude-cli/2.0.76 (external, cli)"}} if _is_gpt_model else {}),
     )
     adapter = build_adapter(args.checkpoint, args.data_root, args.dataname)
     case2 =case_2in

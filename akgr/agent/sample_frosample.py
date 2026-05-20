@@ -1,7 +1,7 @@
 from akgr.kgdata import load_kg
 
 kg = load_kg(
-    dataroot="/home/ycaicr/CtrlHGen/sampled_data",
+    dataroot="./sampled_data",
     dataname="PharmKG8k",
     reverse_edges_flag=False,
 )

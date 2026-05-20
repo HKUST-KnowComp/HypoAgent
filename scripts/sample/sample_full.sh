@@ -1,1 +1,0 @@
-python -m akgr.sampling.sample_parallel -s="full" -a=32 -p=16

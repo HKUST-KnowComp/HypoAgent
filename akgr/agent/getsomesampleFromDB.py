@@ -259,10 +259,10 @@ def parse_args():
     parser.add_argument(
         "--input_file",
         type=str,
-        default="/home/ycaicr/CtrlHGen/sampled_data/DBpedia50/False/DBpedia50-full-32-test-a2q.jsonl",
+        default="./sampled_data/DBpedia50/False/DBpedia50-full-32-test-a2q.jsonl",
     )
     parser.add_argument("--output_file", type=str, default="")
-    parser.add_argument("--data_root", type=str, default="/home/ycaicr/CtrlHGen/sampled_data")
+    parser.add_argument("--data_root", type=str, default="./sampled_data")
     parser.add_argument("--dataname", type=str, default="DBpedia50")
     parser.add_argument("--reverse_edges_flag", action="store_true")
     parser.add_argument(

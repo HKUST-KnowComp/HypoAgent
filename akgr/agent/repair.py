@@ -326,8 +326,8 @@ if __name__ == "__main__":
     from akgr.kgdata import load_kg
     from akgr.agent.ctrlhgen_adapter import CtrlHGenAdapter
 
-    hypothesis_model_path = '/home/gaoyisen/akgr-agent/checkpoints/PharmKG8k-full-32-130-multi.pth'
-    data_root = '/home/gaoyisen/akgr-agent/data/'
+    hypothesis_model_path = 'checkpoints/PharmKG8k-full-32-130-multi.pth'
+    data_root = './data/'
     dataname = 'PharmKG8k'
 
     config_dataloader = load_yaml('akgr/configs/config-dataloader.yml')

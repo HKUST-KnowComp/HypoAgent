@@ -34,6 +34,21 @@ import logging
 import torch
 torch.multiprocessing.set_sharing_strategy('file_system')
 
+from akgr.tokenizer import (
+    create_tokenizer,
+    new_extract_sample_to_device,
+    new_extract_sample_to_device_pattern,
+    new_extract_sample_to_device_number_relation,
+    new_extract_sample_to_device_number_entity,
+    new_extract_sample_to_device_specific_entity,
+    new_extract_sample_to_device_specific_relation,
+    new_extract_sample_to_device_multi,
+)
+from akgr.abduction_model.generation import (
+    PrefixAllowedTokensFn,
+    generate_with_constraints,
+)
+
 
 
 raw_dataset = None
@@ -67,22 +82,29 @@ def train_loop(args, dataloader, model, tokenizer, optimizer, scheduler, model_n
         # a list of tensors
         if args.condition == 'unconditional':
             source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask = \
-            new_extract_sample_to_device(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+            new_extract_sample_to_device(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
         elif args.condition == 'pattern':
             source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-            new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+            new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
         elif args.condition == 'relationnumber':
             source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-            new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False) 
+            new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train') 
         elif args.condition == 'entitynumber':
             source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-            new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+            new_extract_sample_to_device_number_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
         elif args.condition == 'relation':
             source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-            new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+            new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
         elif args.condition == 'entity':
             source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-            new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+            new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
+        elif args.condition == 'multi':
+            multi_condition_list = get_multi_condition_list(args)
+            source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
+                new_extract_sample_to_device_multi(
+                        device, sample, tokenizer, is_gpt, src_len, tgt_len, False,
+                        multi_condition_list,args.random_multi,args.seed, stage='train'
+                )
 
         optimizer.zero_grad()
        
@@ -134,23 +156,29 @@ def valid_loop(args, dataloader, model, tokenizer, graph_samplers,
         for iter, sample in (pbar := tqdm(enumerate(dataloader, start=1), total=niter)):
             if args.condition == 'unconditional':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask = \
-                new_extract_sample_to_device(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+                new_extract_sample_to_device(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
             elif args.condition == 'pattern':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+                new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
             elif args.condition == 'relationnumber':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False) 
+                new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train') 
             elif args.condition == 'entitynumber':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+                new_extract_sample_to_device_number_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
             elif args.condition == 'relation':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
+                new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
             elif args.condition == 'entity':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, False)
-
+                new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, False, stage='train')
+            elif args.condition == 'multi':
+                multi_condition_list = get_multi_condition_list(args)
+                source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
+                    new_extract_sample_to_device_multi(
+                        device, sample, tokenizer, is_gpt, src_len, tgt_len, False,
+                        multi_condition_list,args.random_multi,args.seed, stage='train'
+                    )
             # print('src, tgt shapes:', src.shape, tgt.shape)
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             # print(outputs)
@@ -239,70 +267,15 @@ def fit(args, nepoch, dataloader, model, tokenizer, optimizer, scheduler, graph_
 
         print('=' * 50)
 
-class Prefix_allowed_tokens_fn:
+class Prefix_allowed_tokens_fn(PrefixAllowedTokensFn):
     def __init__(self, offset, nentity, nrelation, special_tokens, tokenizer):
-        self.offset = offset
-        self.nentity = nentity
-        self.nrelation = nrelation
-        self.special_tokens = special_tokens
-        # self.bos_token_id = tokenizer.bos_token_id
-        # self.sep_token_id = tokenizer.sep_token_id
-        # self.eos_token_id = tokenizer.eos_token_id
-        # self.pad_token_id = tokenizer.pad_token_id
-        self.tokenizer = tokenizer
-        self.iun_ids = tokenizer.convert_tokens_to_ids(['i', 'u', 'n'])
-    def get_gathered_tokens(self) -> list:
-        return list(range(self.offset + self.nentity + self.nrelation))
-    def get_non_special_tokens(self) -> list:
-        return self.iun_ids + list(range(self.offset, self.offset + self.nentity + self.nrelation))
-    # def get_p_allowed_tokens(offset:int, nentity:int, nrelation:int, rel: int) -> list:
-    #     # return list(range(offset, offset + nentity))
-    #     return [15,16,17]\
-    #         + ([offset + h for h in rel_2_allowed_headent[rel]] if rel in rel_2_allowed_headent \
-    #             else list(range(offset, offset + nentity)))\
-    #         + list(range(offset + nentity, offset + nentity + nrelation))
-    def get_iun_allowed_tokens(self) -> list:
-        # ANY \ e
-        return self.iun_ids\
-                + list(range(self.offset + self.nentity, self.offset + self.nentity + self.nrelation))
-    def __call__(self, batch_id: int, input_ids: torch.LongTensor) -> list:
-        #初始可以随便
-        if input_ids.shape[-1] <= 1:
-            return self.get_gathered_tokens()
-        is_gpt = (not input_ids[1] in self.get_iun_allowed_tokens())
-        prefix_ids = list(input_ids)
-        if is_gpt:
-            #取后面的部分
-            if self.tokenizer.sep_token_id in prefix_ids:
-                sep_pos = prefix_ids.index(self.tokenizer.sep_token_id)
-                prefix_ids = prefix_ids[sep_pos:]
-            else: # Query part does not appear
-                return self.get_gathered_tokens()
-        # print('prefix')
-        # print(prefix_ids)
-        #取当前最后一个token
-        last_action = prefix_ids[-1]
-        #相当于是第一个tgt的生成
-        if last_action in [self.tokenizer.bos_token_id, self.tokenizer.sep_token_id]:
-            return self.get_non_special_tokens()
-        #如果是i,n,u则考虑i，n，u和p
-        elif last_action in self.iun_ids: # ANY \ e
-            return self.get_iun_allowed_tokens()
-        #如果是e，检查是否成功。如果不成功就继续生成。
-        elif last_action >= offset and last_action < offset + nentity:
-            # omit the first 'START' token
-            actionstr_prefix = self.tokenizer.decode(prefix_ids, skip_special_tokens=True)
-            branching = qry_actionprefix_get_branching(action_prefix=actionstr_prefix)
-            if branching == 'EMPTY': # Query graph is complete, must return EOS
-                return [self.tokenizer.eos_token_id]
-            else: # i / u
-                return self.get_iun_allowed_tokens()
-        # elif operator == 'p': # ANY with constraints
-        #如果是p，后面就是p或e
-        elif last_action >= offset + nentity:
-            return self.get_non_special_tokens()
-        else: # eos, pad, etc.
-            return [self.tokenizer.pad_token_id]
+        super().__init__(
+            offset=offset,
+            nentity=nentity,
+            nrelation=nrelation,
+            tokenizer=tokenizer,
+            allow_entity_as_first_token=False,
+        )
         
 def constrained_inference(args, model, input_ids, attention_mask, max_length,
               bos_token_id, eos_token_id, pad_token_id, tokenizer,
@@ -324,19 +297,19 @@ def constrained_inference(args, model, input_ids, attention_mask, max_length,
     # else:
     #     prefix_constrained_logits_preprocessor = None
     # input_len = input_ids.shape[-1]
-    output = model.generate(
+    output = generate_with_constraints(
+        model=model,
         input_ids=input_ids,
         attention_mask=attention_mask,
         max_length=max_length,
         pad_token_id=pad_token_id,
         bos_token_id=bos_token_id,
         eos_token_id=eos_token_id,
-        min_length=-1,
         top_p=1.0,
         top_k=args.test_top_k,
         do_sample=True,
+        temperature=args.temperature,
         prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
-        # logits_processor=prefix_constrained_logits_preprocessor
     )
     return output
 
@@ -372,23 +345,30 @@ def test_loop(args, dataloader, model, tokenizer, graph_samplers, searching_spli
                                           total=niter, disable=(accelerator is not None) and (not accelerator.is_local_main_process))):
             # gathered_sample = accelerator.gather_for_metrics(sample) if accelerator is not None else sample
             if args.condition == 'unconditional':
-                source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask = \
-                new_extract_sample_to_device(device, sample, tokenizer, is_gpt, src_len, tgt_len, True)
+                source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask,condition = \
+                new_extract_sample_to_device(device, sample, tokenizer, is_gpt, src_len, tgt_len, True, stage='test')
             elif args.condition == 'pattern':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, True)
+                new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, True, stage='test')
             elif args.condition == 'relationnumber':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, True) 
+                new_extract_sample_to_device_number_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, True, stage='test') 
             elif args.condition == 'entitynumber':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_pattern(device, sample, tokenizer, is_gpt, src_len, tgt_len, True)
+                new_extract_sample_to_device_number_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, True, stage='test')
             elif args.condition == 'relation':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, True)
+                new_extract_sample_to_device_specific_relation(device, sample, tokenizer, is_gpt, src_len, tgt_len, True, stage='test')
             elif args.condition == 'entity':
                 source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
-                new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, True)
+                new_extract_sample_to_device_specific_entity(device, sample, tokenizer, is_gpt, src_len, tgt_len, True, stage='test')
+            elif args.condition == 'multi':
+                multi_condition_list = get_multi_condition_list(args)
+                source, target, pattern_id, input_ids, attention_mask, labels, source_attention_mask, condition = \
+                    new_extract_sample_to_device_multi(
+                        device, sample, tokenizer, is_gpt, src_len, tgt_len, True,
+                        multi_condition_list,args.random_multi,args.seed, stage='test'
+                        )
 
             pred = constrained_inference(args,
                 model if accelerator is None else accelerator.unwrap_model(model),
@@ -423,6 +403,7 @@ def test_loop(args, dataloader, model, tokenizer, graph_samplers, searching_spli
                 scoring_method=['smatch', 'precrecf1', 'jaccard','dice','overlap','tanimoto','validity','specific'] + ['count0'] * (args.test_count0 == True)
             else:
                 scoring_method=['smatch', 'precrecf1', 'jaccard','dice','overlap','tanimoto','validity'] + ['count0'] * (args.test_count0 == True)
+
             scores, failures_batch_id = scoring_fn(
                 pred_word_batch=pred_decoded,
                 label_word_batch=target,
@@ -433,7 +414,9 @@ def test_loop(args, dataloader, model, tokenizer, graph_samplers, searching_spli
                 graph_samplers=graph_samplers,
                 searching_split=searching_split,
                 return_failures=True,
-                verbose=args.vs)
+                verbose=args.vs
+            )
+            
             # print(scores)
             if accelerator is not None:
                 gathered_scores = [None] * accelerator.num_processes
@@ -789,11 +772,10 @@ def load_model_by_mode(args, device, model_name, is_gpt, config_model=None, ntok
     if args.mode in ['training', 'testing', 'optimizing'] and args.resume_epoch != 0:
         if args.tuning:
             resume_path = os.path.join(args.checkpoint_root, args.modelname, \
-                '{args.dataname}-{args.scale}-{args.max_answer_size}-{args.resume_epoch}-{args.condition}.pth')
+                f'{args.dataname}-{args.scale}-{args.max_answer_size}-{args.resume_epoch}-{args.condition}.pth')
         else:
             resume_path = os.path.join(args.checkpoint_root, args.modelname, \
-                '{args.dataname}-{args.scale}-{args.max_answer_size}-{args.resume_epoch}-unconditional.pth')
-        resume_path = '/home/gaoyisen/akgr-agent/DBpedia50-full-32-430-multi.pth'
+                f'{args.dataname}-{args.scale}-{args.max_answer_size}-{args.resume_epoch}-unconditional.pth')
         print(f'Loading model: {resume_path}')
         model, optimizer, scheduler, last_epoch, loss_log = \
             load_model(resume_path, 'model', args.resume_epoch, return_huggingface_model=True)
@@ -857,6 +839,15 @@ def load_model_by_mode(args, device, model_name, is_gpt, config_model=None, ntok
     print('model.config:')
     print(model.config)
 
+    # DEBUG: print actual embedding vocab size vs tokenizer vocab size
+    embed_key = "transformer.wte.weight" if is_gpt else "shared.weight"
+    embed_weight = dict(model.named_parameters()).get(embed_key)
+    if embed_weight is not None:
+        print(f'[DEBUG] model embedding vocab size ({embed_key}): {embed_weight.shape[0]}')
+    print(f'[DEBUG] tokenizer ntoken (vocab_size from create_tokenizer): {ntoken}')
+    print(f'[DEBUG] ntoken+1 passed to create_transformer: {ntoken+1}')
+  
+
     if args.mode == 'training': return model, optimizer, scheduler, last_epoch, loss_log
     else: return model
 
@@ -876,6 +867,11 @@ def my_parse_args():
     parser.add_argument('-d', '--dataname', default='FB15k-237')
     parser.add_argument('--scale', default='debug')
     parser.add_argument('-a', '--max-answer-size', type=int, default=32)
+    ##添加的
+    parser.add_argument('--reverse_edges_flag', action='store_true', default=False)
+    parser.add_argument('--random_multi', action='store_true', default=False,help='whether to randomly select conditions in given multi conditions')
+    parser.add_argument('--multi_conditions', type=str, default='')
+    parser.add_argument('--seed', type=int, default=42)
     #condition
     parser.add_argument('--condition', default='unconditional')
     parser.add_argument('--tuning', action='store_true')
@@ -890,6 +886,7 @@ def my_parse_args():
     parser.add_argument('--test_proportion', type=float, default=1)
     parser.add_argument('--test_split', default='test')
     parser.add_argument('--test_top_k', type=int, default=0)
+    parser.add_argument('--temperature', type=float, default=1.0)
     parser.add_argument('--test_count0', action='store_true')
     parser.add_argument('--result_root', default='./results/')
 
@@ -922,6 +919,11 @@ def my_parse_args():
     args = parser.parse_args()
     return args
 
+def get_multi_condition_list(args):
+    if args.condition != 'multi':
+        return []
+    return [x.strip() for x in args.multi_conditions.split(',') if x.strip()]
+
 def main():
     args = my_parse_args()
     print(f'# Running main.py in {args.mode} mode with:')
@@ -944,7 +946,7 @@ def main():
     
     # Graphs (for evaluation)
     print('Loading graph')
-    kg = load_kg(args.dataname)
+    kg = load_kg(args.data_root, args.dataname, reverse_edges_flag=args.reverse_edges_flag)
     graph_samplers = kg.graph_samplers
 
     # Device
@@ -991,7 +993,8 @@ def main():
         pattern_filtered=pattern_filtered,
         data_root=args.data_root,
         splits=splits,
-        is_act=is_act
+        is_act=is_act,
+        reverse_edges_flag=args.reverse_edges_flag
     )
 
     if args.mode == 'testing' and args.test_proportion < 1:
@@ -1019,6 +1022,8 @@ def main():
            is_gpt=is_gpt
     )
     
+    print(f'nrelation: {nrelation}\n,nentity: {nentity}\n, ntoken: {ntoken}\n')
+    print(f'[DEBUG] len(tokenizer): {len(tokenizer)}')
     # Model
     config_model = load_yaml(args.config_model)
     config_train = load_yaml(args.config_train)
@@ -1037,44 +1042,43 @@ def main():
         model = load_model_by_mode(
             args=args, device=device, model_name=model_name, is_gpt=is_gpt,
             config_model=config_model, ntoken=ntoken, config_train=config_train)
-    # print('is_encoder_decoder', model.is_encoder_decoder)
 
-    if args.mode == 'training':
-        # https://huggingface.co/docs/transformers/training#train-in-native-pytorch
-        nepoch = config_train['nepoch']
-        fit(args, nepoch, dataloader_dict, model,
-            tokenizer, optimizer, scheduler, graph_samplers,
-            model_name, is_gpt, is_act, src_len, tgt_len,
-            last_epoch, loss_log,
-            args.vs,
-            accelerator=accelerator if args.accelerate else None)
-    elif args.mode == 'testing':
-        # preprocess_allowed_rel_ent_map(graph_samplers)
-        test_loop(
-            args=args,
-            dataloader=dataloader_dict[args.test_split],
-            model=model,
-            tokenizer=tokenizer,
-            graph_samplers=graph_samplers,
-            searching_split=args.test_split,
-            resume_epoch=args.resume_epoch,
-            is_gpt=is_gpt, is_act=is_act,
-            src_len=src_len, tgt_len=tgt_len,
-            accelerator=accelerator if args.accelerate else None)
-    elif args.mode == 'optimizing':
-        if args.rl_type == 'GRPO':
-            model = optimize_gpro(
-                args=args,
-                dataset=dataset_dict['train'],
-                model=model,
-                tokenizer=tokenizer,
-                graph_sampler=graph_samplers,
-                batch_size=batch_size,
-                is_gpt=is_gpt, is_act=is_act,
-                src_len=src_len, tgt_len=tgt_len
-            )
-        else:
-            print('ppo is writing now')
+    # if args.mode == 'training':
+    #     # https://huggingface.co/docs/transformers/training#train-in-native-pytorch
+    #     nepoch = config_train['nepoch']
+    #     fit(args, nepoch, dataloader_dict, model,
+    #         tokenizer, optimizer, scheduler, graph_samplers,
+    #         model_name, is_gpt, is_act, src_len, tgt_len,
+    #         last_epoch, loss_log,
+    #         args.vs,
+    #         accelerator=accelerator if args.accelerate else None)
+    # elif args.mode == 'testing':
+    #     # preprocess_allowed_rel_ent_map(graph_samplers)
+    #     test_loop(
+    #         args=args,
+    #         dataloader=dataloader_dict[args.test_split],
+    #         model=model,
+    #         tokenizer=tokenizer,
+    #         graph_samplers=graph_samplers,
+    #         searching_split=args.test_split,
+    #         resume_epoch=args.resume_epoch,
+    #         is_gpt=is_gpt, is_act=is_act,
+    #         src_len=src_len, tgt_len=tgt_len,
+    #         accelerator=accelerator if args.accelerate else None)
+    # elif args.mode == 'optimizing':
+    #     if args.rl_type == 'GRPO':
+    #         model = optimize_gpro(
+    #             args=args,
+    #             dataset=dataset_dict['train'],
+    #             model=model,
+    #             tokenizer=tokenizer,
+    #             graph_sampler=graph_samplers,
+    #             batch_size=batch_size,
+    #             is_gpt=is_gpt, is_act=is_act,
+    #             src_len=src_len, tgt_len=tgt_len
+    #         )
+    #     else:
+    #         print('ppo is writing now')
 
 if __name__ == '__main__':
     main()

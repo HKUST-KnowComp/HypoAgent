@@ -1,1 +1,0 @@
-python -m akgr.sampling.sample_parallel -s="server additional" -a=32 -p=16

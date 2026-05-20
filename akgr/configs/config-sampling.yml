@@ -15,7 +15,7 @@ debug:
     "valid": 2
     "test": 2
 full:
-  datasets: ["DBpedia50"]
+  datasets: ["DBpedia50", "BioKG", "PharmKG8k"]
   scale: 1
 my_sample_Bio:
   datasets: ["BioKG"]
