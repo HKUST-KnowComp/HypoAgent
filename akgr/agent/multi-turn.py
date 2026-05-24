@@ -190,12 +190,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["case", "run"], default="case")
     parser.add_argument("--dataname", default="BioKG")
-    parser.add_argument("--checkpoint", default="checkpoints/BioKG-full-32-55-multi.pth")
+    parser.add_argument("--checkpoint", default="checkpoints/BioKG-full-32-multi.pth")
     parser.add_argument("--data_root", default="./data/")
     parser.add_argument("--analysis", action="store_true")
 
     parser.add_argument("--jaccard_threshold", type=float, default=0.8)
-    parser.add_argument("--limit", type=int, default=200)
+    parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
 
     from akgr.utils.load_util import load_yaml

@@ -297,7 +297,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["case", "run"], default="case")
     parser.add_argument("--dataname", default="DBpedia50")
-    parser.add_argument("--checkpoint", default="checkpoints/DBpedia50-full-32-300-multi.pth")
+    parser.add_argument("--checkpoint", default="checkpoints/DBpedia50-full-32-multi.pth")
     parser.add_argument("--data_root", default="./data/")
     parser.add_argument("--jaccard_threshold", type=float, default=0.95)
     parser.add_argument("--limit", type=int, default=500)
@@ -312,44 +312,44 @@ if __name__ == "__main__":
         timeout=60,
     )
     adapter = build_adapter(args.checkpoint, args.data_root, args.dataname)
-    case2 =case_2in
-    if args.mode == "case":
-        log_dir = os.path.join("log", args.dataname)
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "uncondition.jsonl")
-        result = run_uncondition(
-            adapter=adapter, llm_model=llm_model, case=case2,
-            jaccard_threshold=args.jaccard_threshold,
-        )
-        _save_result(log_path, result)
+    # case2 =case_2in
+    # if args.mode == "case":
+    #     log_dir = os.path.join("log", args.dataname)
+    #     os.makedirs(log_dir, exist_ok=True)
+    #     log_path = os.path.join(log_dir, "uncondition.jsonl")
+    #     result = run_uncondition(
+    #         adapter=adapter, llm_model=llm_model, case=case2,
+    #         jaccard_threshold=args.jaccard_threshold,
+    #     )
+    #     _save_result(log_path, result)
 
-    else:
-        from tqdm import tqdm
-        data_file = os.path.join(args.data_root, args.dataname, "singleturn.jsonl")
-        log_dir = os.path.join("log", args.dataname)
-        os.makedirs(log_dir, exist_ok=True)
-        model_tag = api_cfg["model_id"].split("/")[-1]
-        log_path = os.path.join(log_dir, f"uncondition_{model_tag}.jsonl")
+    # else:
+    #     from tqdm import tqdm
+    #     data_file = os.path.join(args.data_root, args.dataname, "singleturn.jsonl")
+    #     log_dir = os.path.join("log", args.dataname)
+    #     os.makedirs(log_dir, exist_ok=True)
+    #     model_tag = api_cfg["model_id"].split("/")[-1]
+    #     log_path = os.path.join(log_dir, f"uncondition_{model_tag}.jsonl")
 
-        with open(data_file, encoding="utf-8") as f:
-            content = f.read()
-        decoder = json.JSONDecoder()
-        cases, pos = [], 0
-        while pos < len(content):
-            while pos < len(content) and content[pos].isspace():
-                pos += 1
-            if pos >= len(content):
-                break
-            obj, pos = decoder.raw_decode(content, pos)
-            cases.append(obj)
+    #     with open(data_file, encoding="utf-8") as f:
+    #         content = f.read()
+    #     decoder = json.JSONDecoder()
+    #     cases, pos = [], 0
+    #     while pos < len(content):
+    #         while pos < len(content) and content[pos].isspace():
+    #             pos += 1
+    #         if pos >= len(content):
+    #             break
+    #         obj, pos = decoder.raw_decode(content, pos)
+    #         cases.append(obj)
 
-        for case in tqdm(cases[:args.limit], desc=args.dataname):
-            try:
-                result = run_uncondition(
-                    adapter=adapter, llm_model=llm_model, case=case,
-                    jaccard_threshold=args.jaccard_threshold, verbose=False,
-                )
-                _save_result(log_path, result)
-            except Exception as e:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"error": str(e), "answers": case.get("answers")}, ensure_ascii=False) + "\n")
+    #     for case in tqdm(cases[:args.limit], desc=args.dataname):
+    #         try:
+    #             result = run_uncondition(
+    #                 adapter=adapter, llm_model=llm_model, case=case,
+    #                 jaccard_threshold=args.jaccard_threshold, verbose=False,
+    #             )
+    #             _save_result(log_path, result)
+    #         except Exception as e:
+    #             with open(log_path, "a", encoding="utf-8") as f:
+    #                 f.write(json.dumps({"error": str(e), "answers": case.get("answers")}, ensure_ascii=False) + "\n")

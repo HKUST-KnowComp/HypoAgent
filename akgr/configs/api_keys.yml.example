@@ -1,5 +1,0 @@
-<website>:
-  api_base: "url-to-your-website"
-  api_key: "api-key-to-your-website"
-  model_id: "model-id-to-your-website"
-

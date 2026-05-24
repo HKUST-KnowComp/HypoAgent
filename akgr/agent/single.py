@@ -71,7 +71,7 @@ def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
 
 
 if __name__ == "__main__":
-    hypothesis_model_path = 'checkpoints/PharmKG8k-full-32-160-multi.pth'
+    hypothesis_model_path = 'checkpoints/PharmKG8k-full-32-multi.pth'
     data_root = './data/'
     dataname = 'PharmKG8k'
     case = case_ip

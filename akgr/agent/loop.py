@@ -623,7 +623,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["case", "run"], default="run")
     parser.add_argument("--dataname", default="BioKG")
-    parser.add_argument("--checkpoint", default="checkpoints/BioKG-full-32-55-multi.pth")
+    parser.add_argument("--checkpoint", default="checkpoints/BioKG-full-32-multi.pth")
     parser.add_argument("--data_root", default="./data/")
     parser.add_argument("--max_rounds", type=int, default=3)
     parser.add_argument("--jaccard_threshold", type=float, default=0.95)
