@@ -93,7 +93,7 @@ Single-turn hypothesis generation with iterative self-refinement. The agent gene
 CUDA_VISIBLE_DEVICES=0 python -m akgr.agent.loop \
     --mode run \
     --dataname BioKG \
-    --checkpoint checkpoints/BioKG-full-32-55-multi.pth \
+    --checkpoint checkpoints/BioKG-full-32-multi.pth \
     --data_root ./data/ \
     --max_rounds 3 \
     --jaccard_threshold 0.95
@@ -111,7 +111,7 @@ Multi-turn dialogue-based hypothesis generation. The user provides a sequence of
 CUDA_VISIBLE_DEVICES=0 python -m akgr.agent.multi-turn \
     --mode run \
     --dataname BioKG \
-    --checkpoint checkpoints/BioKG-full-32-55-multi.pth \
+    --checkpoint checkpoints/BioKG-full-32-multi.pth \
     --data_root ./data/ \
     --analysis
 
@@ -130,7 +130,7 @@ Starts from an unconditional hypothesis (no user conditions), then uses the agen
 CUDA_VISIBLE_DEVICES=0 python -m akgr.agent.uncondition \
     --mode run \
     --dataname DBpedia50 \
-    --checkpoint checkpoints/DBpedia50-full-32-300-multi.pth \
+    --checkpoint checkpoints/DBpedia50-full-32-multi.pth \
     --data_root ./data/
 
 # Run on a single demo case
