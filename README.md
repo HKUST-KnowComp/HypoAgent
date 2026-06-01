@@ -79,6 +79,9 @@ CUDA_VISIBLE_DEVICES=0 python -m akgr.abduction_model.main \
 ```
 
 ---
+### DATA And CKPT
+You can directly using our sampled data and ckpt in https://hkustconnect-my.sharepoint.com/:f:/g/personal/ygaodi_connect_ust_hk/IgB-jL7WLo2VRKy1fkTlPvOXAfIVkXtnrcxMQOSWDQkT9Qo?e=KhNuJ3.
+
 
 ## 4. Running the Agent
 
