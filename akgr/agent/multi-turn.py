@@ -1,7 +1,7 @@
 import json
 from smolagents import OpenAIServerModel
 from akgr.agent.tools import format_conversion_tool, generate_hypothesis_tool, compute_metrics
-from akgr.agent.loop import parse_conditions_from_question, run_loop
+from akgr.agent.loop import best_round_by_conditions, parse_conditions_from_question, run_loop
 from akgr.agent.single import build_adapter
 
 
@@ -13,17 +13,45 @@ _PATTERN_HINT = (
 )
 
 
-def _generate_conditions_from_history(llm_model, history: list[dict], user_question: str) -> list[dict]:
+def _generate_conditions_from_history(
+    llm_model, history: list[dict], user_question: str, hypothesis_history: bool = False
+) -> list[dict]:
     """Generate a condition list based on user question and history."""
-    history_text = "\n".join(
-        f"  Turn {h['turn_id']}: question='{h['user_question']}', "
-        f"condition='{h['condition']}', jaccard={h['jaccard']:.4f}"
-        for h in history
-    ) or "No previous turns."
+    from akgr.agent.judge import _parse_conditions
+
+    if hypothesis_history:
+        # Also expose each previous turn's kept hypothesis, so the model can
+        # reuse a structure that already explained the observations well.
+        lines = []
+        for h in history:
+            rb = h.get("round_best") or h
+            j = rb.get("jaccard")
+            lines.append(
+                f"  Turn {h['turn_id']}: question='{h['user_question']}', "
+                f"condition='{h['condition']}', "
+                f"best_hypothesis='{rb.get('hypothesis_nl')}', "
+                f"jaccard={0.0 if j is None else j:.4f}"
+            )
+        history_text = "\n".join(lines) or "No previous turns."
+        history_note = (
+            "\n## How to use the history\n"
+            "The best hypothesis kept in each previous turn is shown above for reference only. "
+            "The user's requirements change from turn to turn, so the current request overrides "
+            "the history whenever they conflict. Reuse a previous hypothesis' structure only "
+            "where it is still consistent with the current request.\n"
+        )
+    else:
+        history_text = "\n".join(
+            f"  Turn {h['turn_id']}: question='{h['user_question']}', "
+            f"condition='{h['condition']}', jaccard={h['jaccard']:.4f}"
+            for h in history
+        ) or "No previous turns."
+        history_note = ""
 
     prompt = (
         f"You help generate structured conditions for a KG hypothesis generation task.\n\n"
-        f"## Previous turns\n{history_text}\n\n"
+        f"## Previous turns\n{history_text}\n"
+        f"{history_note}\n"
         f"## User's current request\n{user_question}\n\n"
         f"## Available patterns\n{_PATTERN_HINT}\n\n"
         f"## Condition types\n"
@@ -41,17 +69,43 @@ def _generate_conditions_from_history(llm_model, history: list[dict], user_quest
         f"## Output format (STRICT)\n"
         f"You MUST return ONLY a raw JSON array of condition dicts. No explanation, no markdown, no extra text.\n"
         f"- Exactly 1 array of condition dicts with keys 'type' and 'value'\n"
-        f"- Valid types: relation, entity, relationnumber, entitynumber, pattern\n\n"
+        f"- Valid types: relation, entity, relationnumber, entitynumber, pattern\n"
+        f"- Do NOT emit one array per condition; do NOT output several arrays.\n"
+        f"- Do NOT use flat [\"type\", \"value\"] pairs.\n\n"
         f"CORRECT example:\n"
         f'[{{"type":"relation","value":"treats"}},{{"type":"entitynumber","value":"2"}}]\n\n'
+        f"INCORRECT (do NOT do this):\n"
+        f'["relation", "treats"]\\n["entitynumber", "2"]\n\n'
         f"WRONG (do NOT do this): any prose, markdown code fences, nested arrays."
     )
     response = llm_model([{"role": "user", "content": prompt}], stop_sequences=None)
     text = response.content.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-    start = text.find("[")
-    result, _ = json.JSONDecoder().raw_decode(text, start)
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        # Despite the instructions above, the model sometimes emits one array per
+        # condition on consecutive lines. Collect every array it produced instead
+        # of keeping only the first, which would silently drop conditions. Each
+        # array is normalised on its own, since a flat ["type", "value"] pair and
+        # a dict list must not be concatenated into one ambiguous sequence.
+        decoder, collected, pos = json.JSONDecoder(), [], 0
+        while pos < len(text):
+            start = text.find("[", pos)
+            if start == -1:
+                break
+            try:
+                obj, pos = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                break
+            if isinstance(obj, list):
+                collected.extend(_parse_conditions(obj))
+            elif isinstance(obj, dict):
+                collected.append(obj)
+        if not collected:
+            raise
+        result = collected
     return result if isinstance(result, list) else [result]
 def run_multiturn(
     adapter,
@@ -60,6 +114,7 @@ def run_multiturn(
     analysis: bool = False,
     jaccard_threshold: float = 0.95,
     verbose: bool = True,
+    hypothesis_history: bool = False,
 ):
     kg = adapter.kg
     answer_nl = case["answers_nl"]
@@ -78,7 +133,9 @@ def run_multiturn(
             print(f"{'='*60}\n")
 
         # Generate 5 candidate condition-lists
-        conditions = _generate_conditions_from_history(llm_model, history, followup)
+        conditions = _generate_conditions_from_history(
+            llm_model, history, followup, hypothesis_history=hypothesis_history
+        )
         if verbose:
             print(f"  [Conditions] {conditions}")
 
@@ -132,10 +189,11 @@ def run_multiturn(
                     max_rounds=2, jaccard_threshold=jaccard_threshold, verbose=verbose,
                     initial_conditions=conditions,
                 )
-                def _rb_key(h):
-                    rb = h.get("round_best") or h
-                    return (rb["jaccard"], rb.get("dice") or 0)
-                best_round = max(loop_history, key=_rb_key)
+                conds = next(
+                    (h.get("target_conditions") for h in loop_history if h.get("target_conditions")),
+                    conditions,
+                )
+                best_round = best_round_by_conditions(loop_history, conds)
                 best = best_round.get("round_best") or best_round
                 turn_result["round_best"] = {
                     "hypothesis_raw": best.get("hypothesis_raw"),
@@ -193,6 +251,11 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", default="checkpoints/BioKG-full-32-multi.pth")
     parser.add_argument("--data_root", default="./data/")
     parser.add_argument("--analysis", action="store_true")
+    parser.add_argument(
+        "--hypothesis_history",
+        action="store_true",
+        help="Show each previous turn's kept hypothesis when deriving this turn's conditions.",
+    )
 
     parser.add_argument("--jaccard_threshold", type=float, default=0.8)
     parser.add_argument("--limit", type=int, default=500)
@@ -216,6 +279,7 @@ if __name__ == "__main__":
             adapter=adapter, llm_model=llm_model, case=case_complex,
             analysis=args.analysis,
             jaccard_threshold=args.jaccard_threshold,
+            hypothesis_history=args.hypothesis_history,
         )
         _save_result(log_path, case_complex, history)
 
@@ -226,6 +290,7 @@ if __name__ == "__main__":
         os.makedirs(log_dir, exist_ok=True)
         model_tag = api_cfg["model_id"].split("/")[-1]
         suffix = "_analysis" if args.analysis else ""
+        suffix += "_hyphist" if args.hypothesis_history else ""
         log_path = os.path.join(log_dir, f"multiturn_{model_tag}{suffix}.jsonl")
 
         with open(data_file, encoding="utf-8") as f:
@@ -245,7 +310,7 @@ if __name__ == "__main__":
                 history = run_multiturn(
                     adapter=adapter, llm_model=llm_model, case=case,
                     analysis=args.analysis, jaccard_threshold=args.jaccard_threshold,
-                    verbose=False,
+                    verbose=False, hypothesis_history=args.hypothesis_history,
                 )
                 _save_result(log_path, case, history)
             except Exception as e:

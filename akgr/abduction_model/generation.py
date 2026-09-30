@@ -1,3 +1,4 @@
+import copy
 from typing import Callable, List, Optional
 
 import torch
@@ -88,17 +89,33 @@ def generate_with_constraints(
     temperature: float = 1.0,
     prefix_allowed_tokens_fn: Optional[Callable] = None,
 ):
+    # Recent Transformers versions reject generation kwargs that override
+    # values in ``model.generation_config``.  This repository historically
+    # passed all generation controls directly to ``model.generate``; that
+    # works with older versions but raises a ValueError in newer runtimes.
+    # Copy the config so requests remain isolated, update it explicitly, and
+    # pass a single GenerationConfig object instead.
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is None:
+        from transformers import GenerationConfig
+
+        generation_config = GenerationConfig()
+    else:
+        generation_config = copy.deepcopy(generation_config)
+
+    generation_config.max_length = int(max_length)
+    generation_config.min_length = 0
+    generation_config.pad_token_id = int(pad_token_id)
+    generation_config.bos_token_id = int(bos_token_id)
+    generation_config.eos_token_id = int(eos_token_id)
+    generation_config.top_p = float(top_p)
+    generation_config.top_k = int(top_k)
+    generation_config.do_sample = bool(do_sample)
+    generation_config.temperature = float(temperature)
+
     return model.generate(
         input_ids=input_ids,
         attention_mask=attention_mask,
-        max_length=max_length,
-        pad_token_id=pad_token_id,
-        bos_token_id=bos_token_id,
-        eos_token_id=eos_token_id,
-        min_length=-1,
-        top_p=top_p,
-        top_k=top_k,
-        do_sample=do_sample,
-        temperature=float(temperature),
+        generation_config=generation_config,
         prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
     )

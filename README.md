@@ -1,6 +1,6 @@
-# HypoAgent
+# One Hypothesis Is Not Enough: Abductive Reasoning with Agentic Hypothesis Refinement over Knowledge Graphs
 
-This is the official code repository for **HypoAgent: An Agentic Framework for Interactive Abductive Hypothesis Generation over Knowledge Graphs**.
+This is the official code repository for **One Hypothesis Is Not Enough: Abductive Reasoning with Agentic Hypothesis Refinement over Knowledge Graphs**.
 
 ---
 

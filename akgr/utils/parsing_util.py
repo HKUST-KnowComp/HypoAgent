@@ -269,7 +269,6 @@ def qry_wordlist_2_nestedlist(qry_list):
     except:
         return None
 
-import torch
 def shift_entity_index(x: int) -> int:
     return abs(int(x)) + 1
 def shift_relation_index(x: int) -> int:

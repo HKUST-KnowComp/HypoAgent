@@ -149,9 +149,6 @@ def jsonl_2_pickle(data_root, dataname, scale, answer_size,
         with open(pickle_path, 'wb') as f:
             pickle.dump(data, f)
 
-import torch
-import torch.nn as nn
-import transformers
 def load_model(path, contents:str, epoch,
                return_huggingface_model:bool,
                model=None, optimizer=None, scheduler=None):
@@ -162,6 +159,8 @@ def load_model(path, contents:str, epoch,
     """
     # https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_a_general_checkpoint.html
     # https://pytorch.org/tutorials/beginner/basics/saveloadrun_tutorial.html
+    import torch
+    import transformers
     if contents == 'state_dicts':
         print(f'# Loading checkpoint (state_dicts) {path}')
         if model == None or optimizer == None or scheduler == None:
@@ -209,6 +208,8 @@ def load_model(path, contents:str, epoch,
 import pathlib
 def save_model(path, contents:str,
                model, optimizer=None, scheduler=None, epoch=None, loss_log=None):
+    import torch
+
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     if contents == 'state_dicts':
         print(f'# Saving checkpoint (state_dicts) {path}')

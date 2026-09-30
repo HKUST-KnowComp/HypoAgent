@@ -281,8 +281,10 @@ class GraphSampler:
             # relation_name = int(sub_queries[1][1:-1])
             relation_name = -sub_queries[1][1]
             if sub_queries[1][1] > 0:
-                print("# Error: relation > 0")
-                exit()
+                # Relations must be encoded as negative ints; a positive value means
+                # the hypothesis is malformed. Raise rather than terminate, so the
+                # caller can record this case as an error and continue.
+                raise ValueError(f"# Error: relation > 0 ({sub_queries[1][1]})")
             all_answers = []
             for u, v, k in self.out_edges(sub_query_answers):
                 if k == relation_name:

@@ -45,6 +45,8 @@ def build_adapter(hypothesis_model_path: str, data_root: str, dataname: str):
 
 def parse_conditions_from_question(llm_model, followup_question: str) -> list[dict]:
     """Use LLM to parse a natural language followup question into structured conditions."""
+    from akgr.agent.judge import _parse_conditions
+
     prompt = (
         f"Parse the following question into a JSON array of condition dicts.\n"
         f"Valid condition types and their value formats:\n"
@@ -68,7 +70,12 @@ def parse_conditions_from_question(llm_model, followup_question: str) -> list[di
         f'  "I want a hypothesis with 3 relations and 2 entities including relation GG and entity chrnb3"\n'
         f'  -> [{{"type":"relationnumber","value":"3"}},{{"type":"entitynumber","value":"2"}},{{"type":"relation","value":"GG"}},{{"type":"entity","value":"chrnb3"}}]\n\n'
         f"Question: {followup_question}\n\n"
-        f"Return ONLY the JSON array, nothing else."
+        f"Return ONLY ONE JSON array containing ALL conditions as dicts, nothing else.\n"
+        f"Each element MUST be an object with the keys \"type\" and \"value\".\n"
+        f"Do NOT emit one array per condition; do NOT output several arrays; do NOT use\n"
+        f"flat [\"type\", \"value\"] pairs; do NOT add any text before or after the array.\n"
+        f'CORRECT:   [{{"type":"pattern","value":"i p e p e"}},{{"type":"entitynumber","value":"2"}}]\n'
+        f'INCORRECT: ["pattern", "i p e p e"]\\n["entitynumber", "2"]'
     )
     response = llm_model(
         [{"role": "user", "content": prompt}],
@@ -77,7 +84,30 @@ def parse_conditions_from_question(llm_model, followup_question: str) -> list[di
     text = response.content.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Despite the instructions above, the model sometimes emits one array per
+        # condition on consecutive lines. Collect every array it produced instead
+        # of keeping only the first, which would silently drop conditions. Each
+        # array is normalised on its own, since a flat ["type", "value"] pair and
+        # a dict list must not be concatenated into one ambiguous sequence.
+        decoder, parsed, pos = json.JSONDecoder(), [], 0
+        while pos < len(text):
+            start = text.find("[", pos)
+            if start == -1:
+                break
+            try:
+                obj, pos = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                break
+            if isinstance(obj, list):
+                parsed.extend(_parse_conditions(obj))
+            elif isinstance(obj, dict):
+                parsed.append(obj)
+        if not parsed:
+            raise
+        return parsed
 
 def sub_query_prompt() -> str:
     return """
@@ -148,6 +178,44 @@ The positive branch drives recall; the negation only trims false positives.
 """
 
 
+def satisfies_conditions(entry, conds) -> bool:
+    """Whether a hypothesis meets every requested condition (vacuously if none)."""
+    from akgr.agent.judge import _check, _parse_conditions
+
+    raw = entry.get("hypothesis_raw")
+    if not conds:
+        return True
+    if not raw:
+        return False
+    for c in _parse_conditions(conds):
+        try:
+            if not _check(c["type"], c["value"], entry.get("hypothesis_nl"), raw):
+                return False
+        except (ValueError, TypeError):
+            return False  # malformed condition cannot be satisfied
+    return True
+
+
+def _selection_key(entry, conds):
+    """Condition adherence first, then jaccard, then dice.
+
+    Shared by every selection point so that a hypothesis satisfying the user's
+    original conditions always outranks a higher-Jaccard one that ignores them.
+    """
+    return (
+        satisfies_conditions(entry, conds),
+        entry.get("jaccard") or 0.0,
+        entry.get("dice") or 0.0,
+    )
+
+
+def best_round_by_conditions(history, conds):
+    """Pick the round whose round_best is best under condition-first ordering."""
+    def key(h):
+        return _selection_key(h.get("round_best") or h, conds)
+
+    return max(history, key=key)
+
 
 def run_loop(
     adapter,
@@ -180,15 +248,19 @@ def run_loop(
     # Available info for the analysis agent
     rel_name2id = adapter.mapper.rel_name2id
 
-    def _is_better(j1, d1, j2, d2):
-        """Return True if (j1, d1) is better than (j2, d2): jaccard first, dice as tiebreak within 1e-5."""
-        if j1 > j2 + 1e-5:
-            return True
-        if abs(j1 - j2) <= 1e-5 and d1 > d2:
-            return True
-        return False
+    # Candidate selection is condition-first: a hypothesis that satisfies the
+    # user's original request outranks a higher-Jaccard one that ignores it.
+    # The conditions checked are always those parsed from the ORIGINAL utterance,
+    # never a candidate's rewritten condition -- otherwise RCA could "satisfy"
+    # the constraint simply by relaxing it.
+    def _is_better(e1, e2, conds):
+        """Condition adherence first, then jaccard, then dice."""
+        return _selection_key(e1, conds) > _selection_key(e2, conds)
 
     history: list[dict] = []
+    # Conditions the agent extracted in round 1; the fixed yardstick for
+    # selection in every later round.
+    target_conditions: list | None = None
 
     for round_idx in range(1, max_rounds + 1):
         if verbose:
@@ -204,6 +276,8 @@ def run_loop(
             conditions = parse_conditions_from_question(llm_model, original_followup)
         if verbose:
             print(f"[Step 1] Parsed conditions: {conditions}")
+        if target_conditions is None:
+            target_conditions = conditions
 
         # ----- Step 2: Format conversion -----
         fmt_result = format_conversion_tool(adapter=adapter, answer_nl=answer_nl, conditions=conditions)
@@ -526,7 +600,14 @@ def run_loop(
                 if not candidates:
                     candidates = [{"analysis": "Parse failed", "new_condition": original_followup}]
 
-        # Run generation for each candidate, pick best Jaccard
+        # Every branch above may yield non-dict entries (the agent sometimes
+        # returns a bare list of ids), which would crash on cand.get() below.
+        # The isinstance-list branch already filters; apply it to all of them.
+        candidates = [c for c in candidates if isinstance(c, dict)]
+        if not candidates:
+            candidates = [{"analysis": "Parse failed", "new_condition": original_followup}]
+
+        # Run generation for each candidate, pick best by condition adherence
         if verbose:
             print(f"\n--- Evaluating {len(candidates)} candidates ---")
         early_stop = False
@@ -570,7 +651,7 @@ def run_loop(
 
         history[-1]["candidates"] = evaluated_candidates
 
-        # ----- Round best: main hypothesis + candidates, jaccard first, dice as tiebreak -----
+        # ----- Round best: condition adherence first, then jaccard, dice as tiebreak -----
         all_this_round = [{"hypothesis_raw": raw_output, "hypothesis_nl": hypothesis_nl,
                            "jaccard": jaccard, "dice": metrics["dice"], "overlap": metrics["overlap"],
                            "condition": original_followup}]
@@ -579,7 +660,7 @@ def run_loop(
                 all_this_round.append(ce)
         round_best = all_this_round[0]
         for entry in all_this_round[1:]:
-            if _is_better(entry["jaccard"], entry["dice"] or 0, round_best["jaccard"], round_best["dice"] or 0):
+            if _is_better(entry, round_best, target_conditions):
                 round_best = entry
         history[-1]["round_best"] = {
             "hypothesis_raw": round_best["hypothesis_raw"],
@@ -588,6 +669,10 @@ def run_loop(
             "dice": round_best["dice"],
             "overlap": round_best.get("overlap"),
         }
+        # Record the yardstick so downstream selection (e.g. _save_result) can
+        # apply the same condition-first ordering instead of falling back to
+        # plain Jaccard.
+        history[-1]["target_conditions"] = target_conditions
         if verbose:
             print(f"\n[Round {round_idx} best] Jaccard={round_best['jaccard']:.4f}, raw={round_best['hypothesis_raw']}")
 
@@ -597,11 +682,7 @@ def run_loop(
             break
 
     # ----- Final summary -----
-    def _best_key(h):
-        rb = h.get("round_best") or h
-        return (rb["jaccard"], rb.get("dice") or 0)
-
-    best_round = max(history, key=_best_key)
+    best_round = best_round_by_conditions(history, target_conditions)
     best = best_round.get("round_best") or best_round
     if verbose:
         print(f"\n{'='*60}")
@@ -642,10 +723,13 @@ if __name__ == "__main__":
     adapter = build_adapter(args.checkpoint, args.data_root, args.dataname)
 
     def _save_result(log_path, case, history):
-        def _rb(h):
-            rb = h.get("round_best") or h
-            return (rb["jaccard"], rb.get("dice") or 0)
-        best_round = max(history, key=_rb)
+        # Reuse the same condition-first ordering as run_loop: the conditions
+        # parsed in round 1 are stored on each history entry.
+        conds = next(
+            (h.get("target_conditions") for h in history if h.get("target_conditions")),
+            None,
+        )
+        best_round = best_round_by_conditions(history, conds)
         best = best_round.get("round_best") or best_round
         record = {
             "answers": case["answers"],
@@ -662,6 +746,7 @@ if __name__ == "__main__":
                     "jaccard": h.get("jaccard"),
                     "dice": h.get("dice"),
                     "overlap": h.get("metrics", {}).get("overlap"),
+                    "round_best": h.get("round_best"),
                     "candidates": h.get("candidates", []),
                 }
                 for h in history
